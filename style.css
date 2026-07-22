@@ -2324,6 +2324,11 @@ h6 {
     gap: 30px;
   }
 
+  .footer-container {
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+  }
+
   .hero-illustration-card,
   .lake-house-card {
     transform: rotate(0deg) !important;
@@ -2344,6 +2349,11 @@ h6 {
 
   .stats-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .footer-container {
+    grid-template-columns: 1fr;
+    gap: 20px;
   }
 
   .admin-toolbar {
