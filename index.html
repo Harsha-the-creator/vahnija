@@ -216,6 +216,30 @@
       </div>
     </section>
 
+    <!-- School Activities Carousel -->
+    <section id="activities" class="activities-carousel-section">
+      <div class="gallery-section-header">
+        <span class="section-tag">🌟 School Activities</span>
+        <h2 class="section-title">Exciting School Activities</h2>
+        <p class="section-subtitle">Discover the latest events, competitions, and engaging activities happening at Vahnija Global Play School.</p>
+      </div>
+      <div class="carousel-wrapper">
+        <div class="carousel-track" id="activityCarouselTrack">
+          <!-- Dynamic Activities will be injected here -->
+          <div style="text-align: center; width: 100%; color: var(--text-color); font-weight: 500;">
+            Loading exciting activities... ⏳
+          </div>
+        </div>
+        <!-- Navigation Controls -->
+        <button class="carousel-btn carousel-btn-prev" id="activityCarouselPrev" aria-label="Previous">&#8249;</button>
+        <button class="carousel-btn carousel-btn-next" id="activityCarouselNext" aria-label="Next">&#8250;</button>
+      </div>
+      <!-- Dot Indicators -->
+      <div class="carousel-dots" id="activityCarouselDots">
+        <!-- Dynamic Dots will be injected here -->
+      </div>
+    </section>
+
     <!-- Programs / Classes Section -->
     <section id="programs" class="programs-section">
       <div class="section-header">
@@ -414,7 +438,9 @@
                 <label for="gradeSelection">Class/Grade Applying For *</label>
                 <select id="gradeSelection" required>
                   <option value="" disabled selected>Select Class</option>
-                  <option value="Play School">Play School (Ages 2-5)</option>
+                  <option value="Nursery">Nursery (Ages 2-3)</option>
+                  <option value="LKG">LKG (Ages 3-4)</option>
+                  <option value="UKG">UKG (Ages 4-5)</option>
                   <option value="Class 1">Class 1</option>
                   <option value="Class 2">Class 2</option>
                   <option value="Class 3">Class 3</option>
@@ -643,6 +669,9 @@
         <button id="tabStudentsBtn" class="admin-tab-btn">
           <span>🎒 Student Database</span>
         </button>
+        <button id="tabActivitiesBtn" class="admin-tab-btn">
+          <span>🌟 School Activities</span>
+        </button>
       </div>
 
       <!-- Admissions Applications Tab Content -->
@@ -688,7 +717,9 @@
           <div class="filter-controls">
             <select id="filterGradeSelect">
               <option value="ALL">All Classes</option>
-              <option value="Play School">Play School</option>
+              <option value="Nursery">Nursery</option>
+              <option value="LKG">LKG</option>
+              <option value="UKG">UKG</option>
               <option value="Class 1">Class 1</option>
               <option value="Class 2">Class 2</option>
               <option value="Class 3">Class 3</option>
@@ -804,7 +835,9 @@
               <label for="studentClass" style="color: rgba(255,255,255,0.7); font-size: 0.85rem;">Select Class</label>
               <select id="studentClass" required style="width: 100%; box-sizing: border-box;">
                 <option value="" disabled selected>Select Class</option>
-                <option value="Play School">Play School</option>
+                <option value="Nursery">Nursery</option>
+                <option value="LKG">LKG</option>
+                <option value="UKG">UKG</option>
                 <option value="Class 1">Class 1</option>
                 <option value="Class 2">Class 2</option>
                 <option value="Class 3">Class 3</option>
@@ -847,7 +880,9 @@
           <div class="filter-controls">
             <select id="studentClassFilter">
               <option value="ALL">All Classes</option>
-              <option value="Play School">Play School</option>
+              <option value="Nursery">Nursery</option>
+              <option value="LKG">LKG</option>
+              <option value="UKG">UKG</option>
               <option value="Class 1">Class 1</option>
               <option value="Class 2">Class 2</option>
               <option value="Class 3">Class 3</option>
@@ -882,6 +917,67 @@
                 <td colspan="9" class="empty-table-state">
                   <span class="empty-icon">🎒</span>
                   <p>No student records found. Add one above to get started!</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- School Activities Tab Content -->
+      <div id="activitiesTabContent" class="hidden">
+        <!-- Add Activity Form -->
+        <div class="admin-toolbar" style="flex-direction: column; align-items: stretch; gap: 20px;">
+          <h3 style="margin: 0; color: #fff;">Add New Activity 🌟</h3>
+          <form id="activityForm"
+            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) auto; gap: 15px; align-items: end;">
+            <div class="input-group" style="margin: 0;">
+              <label for="activityTitle" style="color: rgba(255,255,255,0.7); font-size: 0.85rem;">Activity Title *</label>
+              <input id="activityTitle" placeholder="e.g. Science Fair 2026" required
+                style="width: 100%; box-sizing: border-box;">
+            </div>
+            <div class="input-group" style="margin: 0;">
+              <label for="activityDescription" style="color: rgba(255,255,255,0.7); font-size: 0.85rem;">Description *</label>
+              <input id="activityDescription" placeholder="Short description about the activity..." required
+                style="width: 100%; box-sizing: border-box;">
+            </div>
+            <div class="input-group" style="margin: 0;">
+              <label for="activityPhotoUpload" style="color: rgba(255,255,255,0.7); font-size: 0.85rem;">Upload Image *</label>
+              <input id="activityPhotoUpload" type="file" accept="image/*" required
+                style="width: 100%; box-sizing: border-box; background: transparent; padding: 5px; color: #fff; font-size: 0.8rem;">
+              <input type="hidden" id="activityPhotoDataUrl">
+            </div>
+            <button type="submit" class="hero-btn primary-btn btn-sm"
+              style="border: none; padding: 12px 25px; height: fit-content; margin-bottom: 0;">
+              <span>Publish Activity 🚀</span>
+            </button>
+          </form>
+          <div id="activityPhotoPreviewContainer" style="display: none; align-items: center; gap: 10px;">
+            <span style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Image Preview:</span>
+            <img id="activityPhotoPreview" src="" alt="Activity Preview"
+              style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover; border: 2px solid var(--primary-color);">
+          </div>
+        </div>
+
+        <!-- Activities List -->
+        <div class="admin-table-container" style="margin-top: 20px;">
+          <table class="applicants-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Image</th>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Date Added</th>
+                <th class="actions-header">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="activityListTableBody">
+              <!-- Dynamic Injection -->
+              <tr>
+                <td colspan="6" class="empty-table-state">
+                  <span class="empty-icon">🌟</span>
+                  <p>No activities published yet. Add one above to display on the main page!</p>
                 </td>
               </tr>
             </tbody>
@@ -927,7 +1023,9 @@
             <select id="editStudentClass" required
               style="width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: #fff;">
               <option value="" disabled selected>Select Class</option>
-              <option value="Play School">Play School</option>
+              <option value="Nursery">Nursery</option>
+              <option value="LKG">LKG</option>
+              <option value="UKG">UKG</option>
               <option value="Class 1">Class 1</option>
               <option value="Class 2">Class 2</option>
               <option value="Class 3">Class 3</option>
