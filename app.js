@@ -19,14 +19,17 @@ document.addEventListener('DOMContentLoaded', () => {
   let applications = [];
   let messages = [];
   let students = [];
+  let activities = [];
   let unsubApps = null;
   let unsubMessages = null;
   let unsubStudents = null;
+  let unsubActivities = null;
 
   function loadFirestoreData() {
     if (unsubApps) unsubApps();
     if (unsubMessages) unsubMessages();
     if (unsubStudents) unsubStudents();
+    if (unsubActivities) unsubActivities();
 
     unsubApps = db.collection('applications').onSnapshot(snapshot => {
       applications = [];
@@ -72,6 +75,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }, error => {
       console.error("Error listening to students:", error);
     });
+
+    unsubActivities = db.collection('activities').onSnapshot(snapshot => {
+      activities = [];
+      snapshot.forEach(doc => {
+        activities.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+      
+      // Sort activities by date added descending (newest first)
+      activities.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+
+      if (typeof tabActivitiesBtn !== 'undefined' && tabActivitiesBtn && tabActivitiesBtn.classList.contains('active')) {
+        renderActivitiesDashboard();
+      }
+      renderFrontPageActivitiesCarousel();
+    }, error => {
+      console.error("Error listening to activities:", error);
+    });
   }
 
   // --- DOM Elements ---
@@ -103,9 +126,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabApplicationsBtn = document.getElementById('tabApplicationsBtn');
   const tabMessagesBtn = document.getElementById('tabMessagesBtn');
   const tabStudentsBtn = document.getElementById('tabStudentsBtn');
+  const tabActivitiesBtn = document.getElementById('tabActivitiesBtn');
   const admissionsTabContent = document.getElementById('admissionsTabContent');
   const messagesTabContent = document.getElementById('messagesTabContent');
   const studentsTabContent = document.getElementById('studentsTabContent');
+  const activitiesTabContent = document.getElementById('activitiesTabContent');
 
   // Admin Portal Dashboard - Admissions
   const statTotalVal = document.getElementById('statTotalVal');
@@ -139,6 +164,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const studentClassFilter = document.getElementById('studentClassFilter');
   const clearStudentFiltersBtn = document.getElementById('clearStudentFiltersBtn');
   const studentListTableBody = document.getElementById('studentListTableBody');
+
+  // Admin Portal Dashboard - Activities
+  const activityForm = document.getElementById('activityForm');
+  const activityTitle = document.getElementById('activityTitle');
+  const activityDescription = document.getElementById('activityDescription');
+  const activityPhotoUpload = document.getElementById('activityPhotoUpload');
+  const activityPhotoDataUrl = document.getElementById('activityPhotoDataUrl');
+  const activityPhotoPreviewContainer = document.getElementById('activityPhotoPreviewContainer');
+  const activityPhotoPreview = document.getElementById('activityPhotoPreview');
+  const activityListTableBody = document.getElementById('activityListTableBody');
+  const activityCarouselTrack = document.getElementById('activityCarouselTrack');
+  const activityCarouselDots = document.getElementById('activityCarouselDots');
 
   // Student Edit Modal
   const studentEditModal = document.getElementById('studentEditModal');
@@ -200,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (unsubApps) { unsubApps(); unsubApps = null; }
       if (unsubMessages) { unsubMessages(); unsubMessages = null; }
       if (unsubStudents) { unsubStudents(); unsubStudents = null; }
+      if (unsubActivities) { unsubActivities(); unsubActivities = null; }
     }
   });
 
@@ -275,9 +313,12 @@ document.addEventListener('DOMContentLoaded', () => {
     tabApplicationsBtn.classList.remove('active');
     tabMessagesBtn.classList.remove('active');
     tabStudentsBtn.classList.remove('active');
+    if(tabActivitiesBtn) tabActivitiesBtn.classList.remove('active');
+    
     admissionsTabContent.classList.add('hidden');
     messagesTabContent.classList.add('hidden');
     studentsTabContent.classList.add('hidden');
+    if(activitiesTabContent) activitiesTabContent.classList.add('hidden');
 
     if (tab === 'applications') {
       tabApplicationsBtn.classList.add('active');
@@ -291,12 +332,17 @@ document.addEventListener('DOMContentLoaded', () => {
       tabStudentsBtn.classList.add('active');
       studentsTabContent.classList.remove('hidden');
       renderStudentsDashboard();
+    } else if (tab === 'activities' && tabActivitiesBtn) {
+      tabActivitiesBtn.classList.add('active');
+      activitiesTabContent.classList.remove('hidden');
+      renderActivitiesDashboard();
     }
   }
 
   tabApplicationsBtn.addEventListener('click', () => switchTab('applications'));
   tabMessagesBtn.addEventListener('click', () => switchTab('messages'));
   tabStudentsBtn.addEventListener('click', () => switchTab('students'));
+  if(tabActivitiesBtn) tabActivitiesBtn.addEventListener('click', () => switchTab('activities'));
 
   // --- Contact Form Handling ---
   const schoolContactForm = document.getElementById('schoolContactForm');
@@ -783,6 +829,10 @@ document.addEventListener('DOMContentLoaded', () => {
     handleImageUpload(editStudentPhotoUpload, editStudentPhotoDataUrl, editStudentPhotoPreview, editStudentPhotoPreviewContainer);
   }
 
+  if (activityPhotoUpload && activityPhotoDataUrl && activityPhotoPreview && activityPhotoPreviewContainer) {
+    handleImageUpload(activityPhotoUpload, activityPhotoDataUrl, activityPhotoPreview, activityPhotoPreviewContainer);
+  }
+
   // --- Add Student Submit Handler ---
   if (studentForm) {
     studentForm.addEventListener('submit', (e) => {
@@ -1047,6 +1097,238 @@ document.addEventListener('DOMContentLoaded', () => {
           alert("Error deleting student: " + error.message);
         });
     }
+  }
+
+  // --- Add Activity Submit Handler ---
+  if (activityForm) {
+    activityForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const newActivity = {
+        title: activityTitle.value.trim(),
+        description: activityDescription.value.trim(),
+        photoUrl: activityPhotoDataUrl.value || '',
+        dateAdded: new Date().toISOString()
+      };
+
+      if (!newActivity.photoUrl) {
+        alert("Please upload an image for the activity! 📸");
+        return;
+      }
+
+      const customId = 'ACT-' + (1000 + Math.floor(Math.random() * 9000));
+
+      db.collection('activities').doc(customId).set(newActivity)
+        .then(() => {
+          activityForm.reset();
+          if (activityPhotoPreviewContainer) {
+            activityPhotoPreviewContainer.style.display = 'none';
+          }
+          activityPhotoDataUrl.value = '';
+          alert("Activity published successfully! 🌟");
+        })
+        .catch(error => {
+          alert("Error adding activity: " + error.message);
+        });
+    });
+  }
+
+  // --- Render Activities Dashboard ---
+  function renderActivitiesDashboard() {
+    if (!activityListTableBody) return;
+
+    if (activities.length === 0) {
+      activityListTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="empty-table-state">
+            <span class="empty-icon">🌟</span>
+            <p>No activities published yet. Add one above to display on the main page!</p>
+          </td>
+        </tr>
+      `;
+    } else {
+      activityListTableBody.innerHTML = activities.map(act => {
+        return `
+          <tr>
+            <td><strong>${act.id}</strong></td>
+            <td style="text-align: center;">
+              <img src="${act.photoUrl}" style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover;" alt="${act.title}">
+            </td>
+            <td><strong>${act.title}</strong></td>
+            <td>${act.description.length > 50 ? act.description.substring(0, 50) + '...' : act.description}</td>
+            <td>${new Date(act.dateAdded).toLocaleDateString()}</td>
+            <td class="table-actions-cell">
+              <button class="action-btn delete-activity-btn" data-id="${act.id}" title="Delete Activity">🗑️</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Wire delete buttons
+      document.querySelectorAll('.delete-activity-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteActivity(btn.getAttribute('data-id')));
+      });
+    }
+  }
+
+  function deleteActivity(id) {
+    if (confirm('Are you sure you want to delete this activity? It will be removed from the front page. 🗑️')) {
+      db.collection('activities').doc(id).delete()
+        .catch(error => {
+          alert("Error deleting activity: " + error.message);
+        });
+    }
+  }
+
+  // --- Render Front-Page Activities Carousel ---
+  let activityAutoTimer = null;
+  function renderFrontPageActivitiesCarousel() {
+    if (!activityCarouselTrack || !activityCarouselDots) return;
+
+    if (activities.length === 0) {
+      activityCarouselTrack.innerHTML = `
+        <div style="text-align: center; width: 100%; color: var(--text-color); font-weight: 500; padding: 40px;">
+          Check back later for exciting new activities! 🌟
+        </div>
+      `;
+      activityCarouselDots.innerHTML = '';
+      return;
+    }
+
+    // Generate HTML for actual slides
+    const slidesHTML = activities.map(act => `
+      <div class="carousel-slide activity-slide">
+        <img src="${act.photoUrl}" alt="${act.title}" />
+        <div class="activity-content">
+          <h3 class="activity-title">${act.title}</h3>
+          <p class="activity-desc">${act.description}</p>
+        </div>
+      </div>
+    `).join('');
+
+    activityCarouselTrack.innerHTML = slidesHTML;
+
+    // Generate Dots (only for original number of slides)
+    activityCarouselDots.innerHTML = activities.map((_, i) => `
+      <span class="dot ${i === 0 ? 'active' : ''}" data-index="${i}"></span>
+    `).join('');
+
+    // Re-initialize carousel functionality for Activities
+    initActivityCarousel();
+  }
+
+  function initActivityCarousel() {
+    const track = document.getElementById('activityCarouselTrack');
+    const prevBtn = document.getElementById('activityCarouselPrev');
+    const nextBtn = document.getElementById('activityCarouselNext');
+    const dots = document.querySelectorAll('#activityCarouselDots .dot');
+    const TOTAL = activities.length;
+
+    if (!track || TOTAL === 0) return;
+
+    let currentIndex = 0;
+    const INTERVAL = 3500; // ms between auto-advances
+
+    if (activityAutoTimer) { clearInterval(activityAutoTimer); activityAutoTimer = null; }
+
+    function getSlideWidth() {
+      const slide = track.querySelector('.activity-slide');
+      if (!slide) return 360;
+      const gap = 20;
+      return slide.offsetWidth + gap;
+    }
+
+    function goTo(index, animate = true) {
+      if(TOTAL === 0) return;
+      currentIndex = ((index % TOTAL) + TOTAL) % TOTAL;
+      const offset = -(currentIndex * getSlideWidth());
+      track.style.animation = 'none'; // stop CSS animation
+      track.style.transition = animate ? 'transform 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
+      track.style.transform  = `translateX(${offset}px)`;
+      
+      dots.forEach((d, i) => {
+        d.classList.toggle('active', i === currentIndex);
+      });
+    }
+
+    function startAuto() {
+      stopAuto();
+      activityAutoTimer = setInterval(() => {
+        goTo(currentIndex + 1);
+      }, INTERVAL);
+    }
+
+    function stopAuto() {
+      if (activityAutoTimer) { clearInterval(activityAutoTimer); activityAutoTimer = null; }
+    }
+
+    if (prevBtn) {
+      // replaceWith clone to remove old listeners in case this is called multiple times
+      const newPrev = prevBtn.cloneNode(true);
+      prevBtn.replaceWith(newPrev);
+      newPrev.addEventListener('click', () => {
+        stopAuto();
+        goTo(currentIndex - 1);
+        startAuto();
+      });
+    }
+
+    if (nextBtn) {
+      const newNext = nextBtn.cloneNode(true);
+      nextBtn.replaceWith(newNext);
+      newNext.addEventListener('click', () => {
+        stopAuto();
+        goTo(currentIndex + 1);
+        startAuto();
+      });
+    }
+
+    const freshDots = document.querySelectorAll('#activityCarouselDots .dot');
+    freshDots.forEach((dot, i) => {
+      dot.addEventListener('click', () => {
+        stopAuto();
+        goTo(i);
+        startAuto();
+      });
+    });
+
+    track.addEventListener('mouseenter', () => { stopAuto(); });
+    track.addEventListener('mouseleave', () => { startAuto(); });
+
+    // Drag / Swipe
+    let dragStartX = 0;
+    let isDragging = false;
+    track.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      dragStartX = e.clientX;
+      stopAuto();
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      const diff = dragStartX - e.clientX;
+      if (Math.abs(diff) > 50) {
+        goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
+      }
+      startAuto();
+    });
+
+    track.addEventListener('touchstart', (e) => {
+      dragStartX = e.touches[0].clientX;
+      stopAuto();
+    }, { passive: true });
+
+    track.addEventListener('touchend', (e) => {
+      const diff = dragStartX - e.changedTouches[0].clientX;
+      if (Math.abs(diff) > 50) {
+        goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
+      }
+      startAuto();
+    });
+
+    // Start auto-play
+    startAuto();
   }
 
   // --- Email Notification Dispatcher (EmailJS) ---
