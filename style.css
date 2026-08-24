@@ -1,5 +1,6 @@
 /* Global Design System Variables */
 :root {
+  --header-offset: 112px;
   --primary-color: #38bdf8;
   /* Happy Sky Blue */
   --secondary-color: #4ade80;
@@ -54,13 +55,17 @@ h6 {
 .school-header {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px);
-  position: sticky;
+  position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   z-index: 100;
   box-shadow: 0 4px 30px rgba(56, 189, 248, 0.08);
   border-bottom: 2px solid rgba(56, 189, 248, 0.2);
+}
+
+main {
+  padding-top: var(--header-offset);
 }
 
 .header-container {
@@ -775,30 +780,55 @@ h6 {
   background: linear-gradient(180deg, #f0fdf4 0%, #fef9c3 100%);
 }
 
+.activities-carousel-section .carousel-track {
+  justify-content: center;
+  animation: none;
+}
+
 .activity-slide {
-  flex: 0 0 360px;
+  flex: 0 0 min(360px, calc(100vw - 40px));
   height: 380px;
   display: flex;
   flex-direction: column;
+  margin: 0;
+}
+
+.activities-carousel-section .carousel-track.is-overflowing {
+  justify-content: flex-start;
+}
+
+.activity-status-message {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 40px 60px;
+  color: var(--text-color);
+  font-weight: 500;
+  text-align: center;
 }
 
 .activity-slide img {
-  height: 200px;
+  height: 100%;
   object-fit: cover;
-  border-bottom: 3px solid var(--accent-color);
+  border: 0;
 }
 
 .activity-content {
-  padding: 20px;
-  background: #fff;
-  flex-grow: 1;
+  position: absolute;
+  inset: auto 0 0;
+  padding: 70px 20px 20px;
+  background: linear-gradient(to top, rgba(2, 6, 23, 0.86), rgba(2, 6, 23, 0));
+  color: #fff;
+  min-height: 48%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
+  text-align: center;
 }
 
 .activity-title {
-  color: var(--secondary-color);
+  color: #fff;
   font-size: 1.3rem;
   font-weight: 800;
   margin-bottom: 10px;
@@ -806,7 +836,7 @@ h6 {
 }
 
 .activity-desc {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 0.95rem;
   line-height: 1.5;
   margin: 0;
@@ -1347,7 +1377,7 @@ select option,
 .admin-portal-section {
   background: var(--admin-bg-gradient);
   min-height: 100vh;
-  padding: 50px 20px;
+  padding: calc(50px + var(--header-offset)) 20px 50px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -2338,6 +2368,10 @@ select option,
 
 /* Responsive Rules */
 @media (max-width: 992px) {
+  :root {
+    --header-offset: 205px;
+  }
+
   .header-container {
     flex-direction: column;
     gap: 15px;
@@ -2428,6 +2462,10 @@ select option,
 }
 
 @media (max-width: 576px) {
+  :root {
+    --header-offset: 275px;
+  }
+
   .input-row {
     grid-template-columns: 1fr;
     gap: 10px;
@@ -2451,6 +2489,29 @@ select option,
 
   .dancing-letter {
     font-size: 2rem;
+  }
+
+  .activities-carousel-section {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .activities-carousel-section .carousel-wrapper {
+    border-radius: 14px;
+  }
+
+  .activities-carousel-section .carousel-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 1.5rem;
+  }
+
+  .activities-carousel-section .carousel-btn-prev {
+    left: 6px;
+  }
+
+  .activities-carousel-section .carousel-btn-next {
+    right: 6px;
   }
 }
 
