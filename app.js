@@ -1,514 +1,678 @@
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyATfvNzYfIBq4md5ZrEyIboJNLDfyT7xwk",
-  authDomain: "vahnija-global-play-school.firebaseapp.com",
-  projectId: "vahnija-global-play-school",
-  storageBucket: "vahnija-global-play-school.firebasestorage.app",
-  messagingSenderId: "102686711168",
-  appId: "1:102686711168:web:4032460fe0396cccf73565",
-  measurementId: "G-2197FLWNPC"
-};
+async function loadFirebaseConfig() {
+  const hasRequiredConfig = config => [
+    config.apiKey,
+    config.authDomain,
+    config.projectId,
+    config.storageBucket,
+    config.messagingSenderId,
+    config.appId
+  ].every(Boolean);
 
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
-
-document.addEventListener('DOMContentLoaded', () => {
-  // --- State ---
-  let applications = [];
-  let messages = [];
-  let students = [];
-  let activities = [];
-  let unsubApps = null;
-  let unsubMessages = null;
-  let unsubStudents = null;
-  let unsubActivities = null;
-
-  function loadFirestoreData() {
-    if (unsubApps) unsubApps();
-    if (unsubMessages) unsubMessages();
-    if (unsubStudents) unsubStudents();
-    if (unsubActivities) unsubActivities();
-
-    unsubApps = db.collection('applications').onSnapshot(snapshot => {
-      applications = [];
-      snapshot.forEach(doc => {
-        applications.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-      if (tabApplicationsBtn.classList.contains('active')) {
-        renderAdminDashboard();
+  try {
+    const endpointResponse = await fetch('/api/firebase-config', { cache: 'no-store' });
+    if (endpointResponse.ok) {
+      const contentType = endpointResponse.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const payload = await endpointResponse.json();
+        const config = payload.firebase || payload;
+        if (hasRequiredConfig(config)) return config;
       }
-    }, error => {
-      console.error("Error listening to applications:", error);
-    });
-
-    unsubMessages = db.collection('messages').onSnapshot(snapshot => {
-      messages = [];
-      snapshot.forEach(doc => {
-        messages.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-      if (tabMessagesBtn.classList.contains('active')) {
-        renderMessagesDashboard();
-      }
-    }, error => {
-      console.error("Error listening to messages:", error);
-    });
-
-    unsubStudents = db.collection('students').onSnapshot(snapshot => {
-      students = [];
-      snapshot.forEach(doc => {
-        students.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-      if (typeof tabStudentsBtn !== 'undefined' && tabStudentsBtn && tabStudentsBtn.classList.contains('active')) {
-        renderStudentsDashboard();
-      }
-    }, error => {
-      console.error("Error listening to students:", error);
-    });
-
-    unsubActivities = db.collection('activities').onSnapshot(snapshot => {
-      activities = [];
-      snapshot.forEach(doc => {
-        activities.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
-      
-      // Sort activities by date added descending (newest first)
-      activities.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
-
-      if (typeof tabActivitiesBtn !== 'undefined' && tabActivitiesBtn && tabActivitiesBtn.classList.contains('active')) {
-        renderActivitiesDashboard();
-      }
-      renderFrontPageActivitiesCarousel();
-    }, error => {
-      console.error("Error listening to activities:", error);
-    });
+    }
+  } catch (error) {
+    console.warn('Netlify Firebase configuration unavailable; trying .env:', error.message);
   }
 
-  // --- DOM Elements ---
-  // Navigation & Sections
+  let response;
+  try {
+    response = await fetch('.env', { cache: 'no-store' });
+  } catch (error) {
+    throw new Error('Firebase configuration is unavailable from Netlify or .env');
+  }
+  if (!response.ok) {
+    throw new Error('Firebase configuration is unavailable from Netlify or .env');
+  }
+
+  const env = {};
+  (await response.text()).split(/\r?\n/).forEach(line => {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (match) env[match[1]] = match[2].replace(/^['"]|['"]$/g, '');
+  });
+
+  const firebaseConfig = {
+    apiKey: env.FIREBASE_API_KEY,
+    authDomain: env.FIREBASE_AUTH_DOMAIN,
+    projectId: env.FIREBASE_PROJECT_ID,
+    storageBucket: env.FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
+    appId: env.FIREBASE_APP_ID,
+    measurementId: env.FIREBASE_MEASUREMENT_ID
+  };
+
+  if (hasRequiredConfig(firebaseConfig)) {
+    return firebaseConfig;
+  }
+
+  throw new Error('Firebase configuration is incomplete in Netlify variables or .env');
+}
+
+function setupPortalNavigation() {
   const mainContent = document.getElementById('mainContent');
   const adminPortal = document.getElementById('adminPortal');
   const toggleAdminBtn = document.getElementById('toggleAdminBtn');
-  const closeAdminBtn = document.getElementById('closeAdminBtn');
-  const navLinks = document.querySelectorAll('.nav-link');
+  const applyNowNavBtn = document.querySelector('.apply-now-nav-btn');
 
-  // Form Wizard
-  const admissionForm = document.getElementById('admissionForm');
-  const formSuccessCard = document.getElementById('formSuccessMessage');
-  const submittedTicketId = document.getElementById('submittedTicketId');
-  const resetFormBtn = document.getElementById('resetFormBtn');
-  const stepPanes = document.querySelectorAll('.form-step-pane');
-  const progressSteps = document.querySelectorAll('.progress-step');
-
-  // Form Review Fields
-  const revChildName = document.getElementById('revChildName');
-  const revGrade = document.getElementById('revGrade');
-  const revDob = document.getElementById('revDob');
-  const revGender = document.getElementById('revGender');
-  const revParentName = document.getElementById('revParentName');
-  const revPhone = document.getElementById('revPhone');
-  const revEmail = document.getElementById('revEmail');
-
-  // Admin Portal Dashboard - Tabs
-  const tabApplicationsBtn = document.getElementById('tabApplicationsBtn');
-  const tabMessagesBtn = document.getElementById('tabMessagesBtn');
-  const tabStudentsBtn = document.getElementById('tabStudentsBtn');
-  const tabActivitiesBtn = document.getElementById('tabActivitiesBtn');
-  const admissionsTabContent = document.getElementById('admissionsTabContent');
-  const messagesTabContent = document.getElementById('messagesTabContent');
-  const studentsTabContent = document.getElementById('studentsTabContent');
-  const activitiesTabContent = document.getElementById('activitiesTabContent');
-
-  // Admin Portal Dashboard - Admissions
-  const statTotalVal = document.getElementById('statTotalVal');
-  const statPendingVal = document.getElementById('statPendingVal');
-  const statApprovedVal = document.getElementById('statApprovedVal');
-  const statRejectedVal = document.getElementById('statRejectedVal');
-  const adminSearchInput = document.getElementById('adminSearchInput');
-  const filterGradeSelect = document.getElementById('filterGradeSelect');
-  const filterStatusSelect = document.getElementById('filterStatusSelect');
-  const clearFiltersBtn = document.getElementById('clearFiltersBtn');
-  const applicantsTableBody = document.getElementById('applicantsTableBody');
-  const clearAllDataBtn = document.getElementById('clearAllDataBtn');
-
-  // Admin Portal Dashboard - Messages
-  const msgStatTotalVal = document.getElementById('msgStatTotalVal');
-  const adminMsgSearchInput = document.getElementById('adminMsgSearchInput');
-  const clearMsgFiltersBtn = document.getElementById('clearMsgFiltersBtn');
-  const messagesTableBody = document.getElementById('messagesTableBody');
-
-  // Admin Portal Dashboard - Students
-  const studentForm = document.getElementById('studentForm');
-  const customStudentId = document.getElementById('customStudentId');
-  const studentName = document.getElementById('studentName');
-  const studentClass = document.getElementById('studentClass');
-  const studentFee = document.getElementById('studentFee');
-  const studentPhotoUpload = document.getElementById('studentPhotoUpload');
-  const studentPhotoDataUrl = document.getElementById('studentPhotoDataUrl');
-  const studentPhotoPreviewContainer = document.getElementById('studentPhotoPreviewContainer');
-  const studentPhotoPreview = document.getElementById('studentPhotoPreview');
-  const studentSearchInput = document.getElementById('studentSearchInput');
-  const studentClassFilter = document.getElementById('studentClassFilter');
-  const clearStudentFiltersBtn = document.getElementById('clearStudentFiltersBtn');
-  const studentListTableBody = document.getElementById('studentListTableBody');
-
-  // Admin Portal Dashboard - Activities
-  const activityForm = document.getElementById('activityForm');
-  const activityTitle = document.getElementById('activityTitle');
-  const activityDescription = document.getElementById('activityDescription');
-  const activityPhotoUpload = document.getElementById('activityPhotoUpload');
-  const activityPhotoDataUrl = document.getElementById('activityPhotoDataUrl');
-  const activityPhotoPreviewContainer = document.getElementById('activityPhotoPreviewContainer');
-  const activityPhotoPreview = document.getElementById('activityPhotoPreview');
-  const activityListTableBody = document.getElementById('activityListTableBody');
-  const activityCarouselTrack = document.getElementById('activityCarouselTrack');
-  const activityCarouselDots = document.getElementById('activityCarouselDots');
-
-  // Student Edit Modal
-  const studentEditModal = document.getElementById('studentEditModal');
-  const editStudentForm = document.getElementById('editStudentForm');
-  const editStudentId = document.getElementById('editStudentId');
-  const editStudentName = document.getElementById('editStudentName');
-  const editStudentClass = document.getElementById('editStudentClass');
-  const editStudentFee = document.getElementById('editStudentFee');
-  const editStudentPaidDisplay = document.getElementById('editStudentPaidDisplay');
-  const editStudentBalanceDisplay = document.getElementById('editStudentBalanceDisplay');
-  const editStudentPayAmount = document.getElementById('editStudentPayAmount');
-  const editStudentPhotoUpload = document.getElementById('editStudentPhotoUpload');
-  const editStudentPhotoDataUrl = document.getElementById('editStudentPhotoDataUrl');
-  const editStudentPhotoPreviewContainer = document.getElementById('editStudentPhotoPreviewContainer');
-  const editStudentPhotoPreview = document.getElementById('editStudentPhotoPreview');
-  const closeStudentEditModalBtn = document.getElementById('closeStudentEditModalBtn');
-  const closeStudentEditModalFooterBtn = document.getElementById('closeStudentEditModalFooterBtn');
-
-  // Modal
-  const detailsModal = document.getElementById('detailsModal');
-  const modalDetailsBody = document.getElementById('modalDetailsBody');
-  const closeModalBtn = document.getElementById('closeModalBtn');
-  const closeModalFooterBtn = document.getElementById('closeModalFooterBtn');
-  const logoutAdminBtn = document.getElementById('logoutAdminBtn');
-  const adminLoginSubmitBtn = document.getElementById('adminLoginSubmitBtn');
-
-  // --- Active Nav Links & Scroll ---
-  navLinks.forEach(link => {
-    link.addEventListener('click', (e) => {
-      // If we are in admin portal, switch back to home view
-      if (!adminPortal.classList.contains('hidden')) {
-        adminPortal.classList.add('hidden');
-        mainContent.classList.remove('hidden');
-      }
-      navLinks.forEach(n => n.classList.remove('active'));
-      link.classList.add('active');
+  if (mainContent && adminPortal && toggleAdminBtn && !toggleAdminBtn.dataset.portalNavigationReady) {
+    toggleAdminBtn.dataset.portalNavigationReady = 'true';
+    toggleAdminBtn.addEventListener('click', () => {
+      mainContent.classList.add('hidden');
+      adminPortal.classList.remove('hidden');
     });
-  });
+  }
 
-  // --- Admin View Toggle & Authentication ---
-  const adminAuthContainer = document.getElementById('adminAuthContainer');
-  const adminDashboardContainer = document.getElementById('adminDashboardContainer');
+  if (mainContent && adminPortal && applyNowNavBtn && !applyNowNavBtn.dataset.portalNavigationReady) {
+    applyNowNavBtn.dataset.portalNavigationReady = 'true';
+    applyNowNavBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      adminPortal.classList.add('hidden');
+      mainContent.classList.remove('hidden');
+      document.getElementById('admission')?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+}
+
+function setupParentInfoNavigation() {
+  const parentInfoButton = document.querySelector('.next-step-btn[data-target-step="2"]');
+  const reviewButton = document.querySelector('.next-step-btn[data-target-step="3"]');
+
+  const showStep = stepNumber => {
+    document.querySelectorAll('.form-step-pane').forEach((pane, index) => {
+      pane.classList.toggle('active', index + 1 === stepNumber);
+    });
+    document.querySelectorAll('.progress-step').forEach((step, index) => {
+      step.classList.toggle('active', index < stepNumber);
+    });
+  };
+
+  if (parentInfoButton && !parentInfoButton.dataset.navigationReady) {
+    parentInfoButton.dataset.navigationReady = 'true';
+    parentInfoButton.addEventListener('click', () => {
+      const requiredFields = [
+        document.getElementById('childName'),
+        document.getElementById('childDob'),
+        document.getElementById('childGender'),
+        document.getElementById('gradeSelection')
+      ];
+
+      if (requiredFields.some(field => !field || !field.value.trim())) {
+        alert('Please fill out all required child details! 🎈');
+        return;
+      }
+
+      showStep(2);
+    });
+  }
+
+  if (reviewButton && !reviewButton.dataset.navigationReady) {
+    reviewButton.dataset.navigationReady = 'true';
+    reviewButton.addEventListener('click', () => {
+      const parentName = document.getElementById('parentName');
+      const parentPhone = document.getElementById('parentPhone');
+      const parentEmail = document.getElementById('parentEmail');
+      const parentAddress = document.getElementById('parentAddress');
+
+      if ([parentName, parentPhone, parentEmail, parentAddress].some(field => !field || !field.value.trim())) {
+        alert('Please fill out all parent or guardian info! 👨‍👩‍👧‍👦');
+        return;
+      }
+
+      document.getElementById('revChildName').textContent = document.getElementById('childName').value;
+      document.getElementById('revGrade').textContent = document.getElementById('gradeSelection').value;
+      document.getElementById('revDob').textContent = document.getElementById('childDob').value;
+      document.getElementById('revGender').textContent = document.getElementById('childGender').value;
+      document.getElementById('revParentName').textContent = parentName.value.trim();
+      document.getElementById('revPhone').textContent = parentPhone.value.trim();
+      document.getElementById('revEmail').textContent = parentEmail.value.trim();
+      showStep(3);
+    });
+  }
+}
+
+function setupAdminLoginGuard() {
   const adminLoginForm = document.getElementById('adminLoginForm');
   const authErrorMsg = document.getElementById('authErrorMsg');
-  const exitAuthBtn = document.getElementById('exitAuthBtn');
+  if (!adminLoginForm || adminLoginForm.dataset.loginGuardReady) return;
 
-  // Firebase Auth State Listener
-  auth.onAuthStateChanged(user => {
-    if (user) {
-      adminAuthContainer.classList.add('hidden');
-      adminDashboardContainer.classList.remove('hidden');
-      switchTab('applications');
-      loadFirestoreData();
-    } else {
-      adminAuthContainer.classList.remove('hidden');
-      adminDashboardContainer.classList.add('hidden');
-      authErrorMsg.classList.add('hidden');
-      adminLoginForm.reset();
-      if (unsubApps) { unsubApps(); unsubApps = null; }
-      if (unsubMessages) { unsubMessages(); unsubMessages = null; }
-      if (unsubStudents) { unsubStudents(); unsubStudents = null; }
-      if (unsubActivities) { unsubActivities(); unsubActivities = null; }
-    }
-  });
+  adminLoginForm.dataset.loginGuardReady = 'true';
+  adminLoginForm.addEventListener('submit', event => {
+    if (window.firebase?.apps?.length) return;
 
-  toggleAdminBtn.addEventListener('click', () => {
-    mainContent.classList.add('hidden');
-    adminPortal.classList.remove('hidden');
-    
-    // Auth screen and dashboard show/hide states are managed by the Firebase onAuthStateChanged listener
-  });
+    event.preventDefault();
+    const startedAt = Date.now();
+    const waitForFirebase = () => {
+      if (window.firebase?.apps?.length) {
+        adminLoginForm.requestSubmit();
+        return;
+      }
 
-  const footerAdminLoginLink = document.getElementById('footerAdminLoginLink');
-  if (footerAdminLoginLink) {
-    footerAdminLoginLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      toggleAdminBtn.click();
-      adminPortal.scrollIntoView({ behavior: 'smooth' });
-    });
-  }
-
-  adminLoginForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const email = document.getElementById('adminEmail').value.trim();
-    const password = document.getElementById('adminPassword').value;
-
-    // Show loading state
-    adminLoginSubmitBtn.disabled = true;
-    adminLoginSubmitBtn.querySelector('span').textContent = 'Authenticating... ⏳';
-    authErrorMsg.classList.add('hidden');
-
-    auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
-      .then(() => {
-        return auth.signInWithEmailAndPassword(email, password);
-      })
-      .catch(error => {
-        if (error.code === 'auth/invalid-credential' || 
-            error.code === 'auth/user-not-found' || 
-            error.code === 'auth/wrong-password' || 
-            error.code === 'auth/invalid-email') {
-          authErrorMsg.textContent = 'Incorrect username or password 🚫';
-        } else {
-          authErrorMsg.textContent = error.message + ' 🚫';
+      if (window.firebaseStartupFailed || Date.now() - startedAt > 10000) {
+        if (authErrorMsg) {
+          authErrorMsg.textContent = 'Unable to connect to Firebase. Check the Firebase configuration.';
+          authErrorMsg.classList.remove('hidden');
         }
-        authErrorMsg.classList.remove('hidden');
-      })
-      .finally(() => {
-        adminLoginSubmitBtn.disabled = false;
-        adminLoginSubmitBtn.querySelector('span').textContent = 'Enter Dashboard 🚀';
-      });
-  });
+        return;
+      }
 
-  if (logoutAdminBtn) {
-    logoutAdminBtn.addEventListener('click', () => {
-      if (confirm('Are you sure you want to log out? 🔒')) {
-        auth.signOut();
+      setTimeout(waitForFirebase, 100);
+    };
+
+    waitForFirebase();
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupPortalNavigation);
+  document.addEventListener('DOMContentLoaded', setupParentInfoNavigation);
+  document.addEventListener('DOMContentLoaded', setupAdminLoginGuard);
+} else {
+  setupPortalNavigation();
+  setupParentInfoNavigation();
+  setupAdminLoginGuard();
+}
+
+loadFirebaseConfig().then(firebaseConfig => {
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const startApp = () => {
+    // --- State ---
+    let applications = [];
+    let messages = [];
+    let students = [];
+    let activities = [];
+    let unsubApps = null;
+    let unsubMessages = null;
+    let unsubStudents = null;
+    let unsubActivities = null;
+
+    function loadFirestoreData() {
+      if (unsubApps) unsubApps();
+      if (unsubMessages) unsubMessages();
+      if (unsubStudents) unsubStudents();
+      unsubApps = db.collection('applications').onSnapshot(snapshot => {
+        applications = [];
+        snapshot.forEach(doc => {
+          applications.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+        if (tabApplicationsBtn.classList.contains('active')) {
+          renderAdminDashboard();
+        }
+      }, error => {
+        console.error("Error listening to applications:", error);
+      });
+
+      unsubMessages = db.collection('messages').onSnapshot(snapshot => {
+        messages = [];
+        snapshot.forEach(doc => {
+          messages.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+        if (tabMessagesBtn.classList.contains('active')) {
+          renderMessagesDashboard();
+        }
+      }, error => {
+        console.error("Error listening to messages:", error);
+      });
+
+      unsubStudents = db.collection('students').onSnapshot(snapshot => {
+        students = [];
+        snapshot.forEach(doc => {
+          students.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+        if (typeof tabStudentsBtn !== 'undefined' && tabStudentsBtn && tabStudentsBtn.classList.contains('active')) {
+          renderStudentsDashboard();
+        }
+      }, error => {
+        console.error("Error listening to students:", error);
+      });
+
+    }
+
+    // --- DOM Elements ---
+    // Navigation & Sections
+    const mainContent = document.getElementById('mainContent');
+    const adminPortal = document.getElementById('adminPortal');
+    const toggleAdminBtn = document.getElementById('toggleAdminBtn');
+    const closeAdminBtn = document.getElementById('closeAdminBtn');
+    const navLinks = document.querySelectorAll('.nav-link');
+
+    // Form Wizard
+    const admissionForm = document.getElementById('admissionForm');
+    const formSuccessCard = document.getElementById('formSuccessMessage');
+    const submittedTicketId = document.getElementById('submittedTicketId');
+    const resetFormBtn = document.getElementById('resetFormBtn');
+    const stepPanes = document.querySelectorAll('.form-step-pane');
+    const progressSteps = document.querySelectorAll('.progress-step');
+
+    // Form Review Fields
+    const revChildName = document.getElementById('revChildName');
+    const revGrade = document.getElementById('revGrade');
+    const revDob = document.getElementById('revDob');
+    const revGender = document.getElementById('revGender');
+    const revParentName = document.getElementById('revParentName');
+    const revPhone = document.getElementById('revPhone');
+    const revEmail = document.getElementById('revEmail');
+
+    // Admin Portal Dashboard - Tabs
+    const tabApplicationsBtn = document.getElementById('tabApplicationsBtn');
+    const tabMessagesBtn = document.getElementById('tabMessagesBtn');
+    const tabStudentsBtn = document.getElementById('tabStudentsBtn');
+    const tabActivitiesBtn = document.getElementById('tabActivitiesBtn');
+    const admissionsTabContent = document.getElementById('admissionsTabContent');
+    const messagesTabContent = document.getElementById('messagesTabContent');
+    const studentsTabContent = document.getElementById('studentsTabContent');
+    const activitiesTabContent = document.getElementById('activitiesTabContent');
+
+    // Admin Portal Dashboard - Admissions
+    const statTotalVal = document.getElementById('statTotalVal');
+    const statPendingVal = document.getElementById('statPendingVal');
+    const statApprovedVal = document.getElementById('statApprovedVal');
+    const statRejectedVal = document.getElementById('statRejectedVal');
+    const adminSearchInput = document.getElementById('adminSearchInput');
+    const filterGradeSelect = document.getElementById('filterGradeSelect');
+    const filterStatusSelect = document.getElementById('filterStatusSelect');
+    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+    const applicantsTableBody = document.getElementById('applicantsTableBody');
+    const clearAllDataBtn = document.getElementById('clearAllDataBtn');
+
+    // Admin Portal Dashboard - Messages
+    const msgStatTotalVal = document.getElementById('msgStatTotalVal');
+    const adminMsgSearchInput = document.getElementById('adminMsgSearchInput');
+    const clearMsgFiltersBtn = document.getElementById('clearMsgFiltersBtn');
+    const messagesTableBody = document.getElementById('messagesTableBody');
+
+    // Admin Portal Dashboard - Students
+    const studentForm = document.getElementById('studentForm');
+    const customStudentId = document.getElementById('customStudentId');
+    const studentName = document.getElementById('studentName');
+    const studentClass = document.getElementById('studentClass');
+    const studentFee = document.getElementById('studentFee');
+    const studentPhotoUpload = document.getElementById('studentPhotoUpload');
+    const studentPhotoDataUrl = document.getElementById('studentPhotoDataUrl');
+    const studentPhotoPreviewContainer = document.getElementById('studentPhotoPreviewContainer');
+    const studentPhotoPreview = document.getElementById('studentPhotoPreview');
+    const studentSearchInput = document.getElementById('studentSearchInput');
+    const studentClassFilter = document.getElementById('studentClassFilter');
+    const clearStudentFiltersBtn = document.getElementById('clearStudentFiltersBtn');
+    const studentListTableBody = document.getElementById('studentListTableBody');
+
+    // Admin Portal Dashboard - Activities
+    const activityForm = document.getElementById('activityForm');
+    const activityTitle = document.getElementById('activityTitle');
+    const activityDescription = document.getElementById('activityDescription');
+    const activityPhotoUpload = document.getElementById('activityPhotoUpload');
+    const activityPhotoDataUrl = document.getElementById('activityPhotoDataUrl');
+    const activityPhotoPreviewContainer = document.getElementById('activityPhotoPreviewContainer');
+    const activityPhotoPreview = document.getElementById('activityPhotoPreview');
+    const activityListTableBody = document.getElementById('activityListTableBody');
+    const activityCarouselTrack = document.getElementById('activityCarouselTrack');
+    const activityCarouselDots = document.getElementById('activityCarouselDots');
+
+    function loadPublicActivities() {
+      if (unsubActivities) unsubActivities();
+
+      unsubActivities = db.collection('activities').onSnapshot(snapshot => {
+        activities = [];
+        snapshot.forEach(doc => {
+          activities.push({ id: doc.id, ...doc.data() });
+        });
+        activities.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+        if (tabActivitiesBtn && tabActivitiesBtn.classList.contains('active')) {
+          renderActivitiesDashboard();
+        }
+        renderFrontPageActivitiesCarousel();
+      }, error => {
+        console.error("Error listening to activities:", error);
+        activityCarouselTrack.innerHTML = `
+        <div style="text-align: center; width: 100%; color: var(--text-color); font-weight: 500; padding: 40px;">
+          Activities are temporarily unavailable. Please check back soon.
+        </div>
+      `;
+      });
+    }
+
+    loadPublicActivities();
+
+    // Student Edit Modal
+    const studentEditModal = document.getElementById('studentEditModal');
+    const editStudentForm = document.getElementById('editStudentForm');
+    const editStudentId = document.getElementById('editStudentId');
+    const editStudentName = document.getElementById('editStudentName');
+    const editStudentClass = document.getElementById('editStudentClass');
+    const editStudentFee = document.getElementById('editStudentFee');
+    const editStudentPaidDisplay = document.getElementById('editStudentPaidDisplay');
+    const editStudentBalanceDisplay = document.getElementById('editStudentBalanceDisplay');
+    const editStudentPayAmount = document.getElementById('editStudentPayAmount');
+    const editStudentPhotoUpload = document.getElementById('editStudentPhotoUpload');
+    const editStudentPhotoDataUrl = document.getElementById('editStudentPhotoDataUrl');
+    const editStudentPhotoPreviewContainer = document.getElementById('editStudentPhotoPreviewContainer');
+    const editStudentPhotoPreview = document.getElementById('editStudentPhotoPreview');
+    const closeStudentEditModalBtn = document.getElementById('closeStudentEditModalBtn');
+    const closeStudentEditModalFooterBtn = document.getElementById('closeStudentEditModalFooterBtn');
+
+    // Modal
+    const detailsModal = document.getElementById('detailsModal');
+    const modalDetailsBody = document.getElementById('modalDetailsBody');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const closeModalFooterBtn = document.getElementById('closeModalFooterBtn');
+    const logoutAdminBtn = document.getElementById('logoutAdminBtn');
+    const adminLoginSubmitBtn = document.getElementById('adminLoginSubmitBtn');
+
+    // --- Active Nav Links & Scroll ---
+    navLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        // If we are in admin portal, switch back to home view
+        if (!adminPortal.classList.contains('hidden')) {
+          adminPortal.classList.add('hidden');
+          mainContent.classList.remove('hidden');
+        }
+        navLinks.forEach(n => n.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // --- Admin View Toggle & Authentication ---
+    const adminAuthContainer = document.getElementById('adminAuthContainer');
+    const adminDashboardContainer = document.getElementById('adminDashboardContainer');
+    const adminLoginForm = document.getElementById('adminLoginForm');
+    const authErrorMsg = document.getElementById('authErrorMsg');
+    const exitAuthBtn = document.getElementById('exitAuthBtn');
+
+    // Firebase Auth State Listener
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        adminAuthContainer.classList.add('hidden');
+        adminDashboardContainer.classList.remove('hidden');
+        switchTab('applications');
+        loadFirestoreData();
+      } else {
+        adminAuthContainer.classList.remove('hidden');
+        adminDashboardContainer.classList.add('hidden');
+        authErrorMsg.classList.add('hidden');
+        adminLoginForm.reset();
+        if (unsubApps) { unsubApps(); unsubApps = null; }
+        if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+        if (unsubStudents) { unsubStudents(); unsubStudents = null; }
       }
     });
-  }
 
-  exitAuthBtn.addEventListener('click', () => {
-    adminPortal.classList.add('hidden');
-    mainContent.classList.remove('hidden');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
-
-  closeAdminBtn.addEventListener('click', () => {
-    adminPortal.classList.add('hidden');
-    mainContent.classList.remove('hidden');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
-
-  // --- Admin Tabs switching ---
-  function switchTab(tab) {
-    tabApplicationsBtn.classList.remove('active');
-    tabMessagesBtn.classList.remove('active');
-    tabStudentsBtn.classList.remove('active');
-    if(tabActivitiesBtn) tabActivitiesBtn.classList.remove('active');
-    
-    admissionsTabContent.classList.add('hidden');
-    messagesTabContent.classList.add('hidden');
-    studentsTabContent.classList.add('hidden');
-    if(activitiesTabContent) activitiesTabContent.classList.add('hidden');
-
-    if (tab === 'applications') {
-      tabApplicationsBtn.classList.add('active');
-      admissionsTabContent.classList.remove('hidden');
-      renderAdminDashboard();
-    } else if (tab === 'messages') {
-      tabMessagesBtn.classList.add('active');
-      messagesTabContent.classList.remove('hidden');
-      renderMessagesDashboard();
-    } else if (tab === 'students') {
-      tabStudentsBtn.classList.add('active');
-      studentsTabContent.classList.remove('hidden');
-      renderStudentsDashboard();
-    } else if (tab === 'activities' && tabActivitiesBtn) {
-      tabActivitiesBtn.classList.add('active');
-      activitiesTabContent.classList.remove('hidden');
-      renderActivitiesDashboard();
+    const footerAdminLoginLink = document.getElementById('footerAdminLoginLink');
+    if (footerAdminLoginLink) {
+      footerAdminLoginLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleAdminBtn.click();
+        adminPortal.scrollIntoView({ behavior: 'smooth' });
+      });
     }
-  }
 
-  tabApplicationsBtn.addEventListener('click', () => switchTab('applications'));
-  tabMessagesBtn.addEventListener('click', () => switchTab('messages'));
-  tabStudentsBtn.addEventListener('click', () => switchTab('students'));
-  if(tabActivitiesBtn) tabActivitiesBtn.addEventListener('click', () => switchTab('activities'));
-
-  // --- Contact Form Handling ---
-  const schoolContactForm = document.getElementById('schoolContactForm');
-  const contactSuccessMessage = document.getElementById('contactSuccessMessage');
-
-  if (schoolContactForm) {
-    schoolContactForm.addEventListener('submit', (e) => {
+    adminLoginForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      
-      const newMsg = {
-        name: document.getElementById('contactName').value.trim(),
-        email: document.getElementById('contactEmail').value.trim(),
-        message: document.getElementById('contactMessage').value.trim(),
+      const email = document.getElementById('adminEmail').value.trim();
+      const password = document.getElementById('adminPassword').value;
+
+      // Show loading state
+      adminLoginSubmitBtn.disabled = true;
+      adminLoginSubmitBtn.querySelector('span').textContent = 'Authenticating... ⏳';
+      authErrorMsg.classList.add('hidden');
+
+      auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+        .then(() => {
+          return auth.signInWithEmailAndPassword(email, password);
+        })
+        .catch(error => {
+          if (error.code === 'auth/invalid-credential' ||
+            error.code === 'auth/user-not-found' ||
+            error.code === 'auth/wrong-password' ||
+            error.code === 'auth/invalid-email') {
+            authErrorMsg.textContent = 'Incorrect username or password 🚫';
+          } else {
+            authErrorMsg.textContent = error.message + ' 🚫';
+          }
+          authErrorMsg.classList.remove('hidden');
+        })
+        .finally(() => {
+          adminLoginSubmitBtn.disabled = false;
+          adminLoginSubmitBtn.querySelector('span').textContent = 'Enter Dashboard 🚀';
+        });
+    });
+
+    if (logoutAdminBtn) {
+      logoutAdminBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to log out? 🔒')) {
+          auth.signOut();
+        }
+      });
+    }
+
+    exitAuthBtn.addEventListener('click', () => {
+      adminPortal.classList.add('hidden');
+      mainContent.classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    closeAdminBtn.addEventListener('click', () => {
+      adminPortal.classList.add('hidden');
+      mainContent.classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    // --- Admin Tabs switching ---
+    function switchTab(tab) {
+      tabApplicationsBtn.classList.remove('active');
+      tabMessagesBtn.classList.remove('active');
+      tabStudentsBtn.classList.remove('active');
+      if (tabActivitiesBtn) tabActivitiesBtn.classList.remove('active');
+
+      admissionsTabContent.classList.add('hidden');
+      messagesTabContent.classList.add('hidden');
+      studentsTabContent.classList.add('hidden');
+      if (activitiesTabContent) activitiesTabContent.classList.add('hidden');
+
+      if (tab === 'applications') {
+        tabApplicationsBtn.classList.add('active');
+        admissionsTabContent.classList.remove('hidden');
+        renderAdminDashboard();
+      } else if (tab === 'messages') {
+        tabMessagesBtn.classList.add('active');
+        messagesTabContent.classList.remove('hidden');
+        renderMessagesDashboard();
+      } else if (tab === 'students') {
+        tabStudentsBtn.classList.add('active');
+        studentsTabContent.classList.remove('hidden');
+        renderStudentsDashboard();
+      } else if (tab === 'activities' && tabActivitiesBtn) {
+        tabActivitiesBtn.classList.add('active');
+        activitiesTabContent.classList.remove('hidden');
+        renderActivitiesDashboard();
+      }
+    }
+
+    tabApplicationsBtn.addEventListener('click', () => switchTab('applications'));
+    tabMessagesBtn.addEventListener('click', () => switchTab('messages'));
+    tabStudentsBtn.addEventListener('click', () => switchTab('students'));
+    if (tabActivitiesBtn) tabActivitiesBtn.addEventListener('click', () => switchTab('activities'));
+
+    // --- Contact Form Handling ---
+    const schoolContactForm = document.getElementById('schoolContactForm');
+    const contactSuccessMessage = document.getElementById('contactSuccessMessage');
+
+    if (schoolContactForm) {
+      schoolContactForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const newMsg = {
+          name: document.getElementById('contactName').value.trim(),
+          email: document.getElementById('contactEmail').value.trim(),
+          message: document.getElementById('contactMessage').value.trim(),
+          dateAdded: new Date().toLocaleDateString()
+        };
+
+        const customId = 'MSG-' + (1000 + Math.floor(Math.random() * 9000));
+
+        db.collection('messages').doc(customId).set(newMsg)
+          .then(() => {
+            schoolContactForm.classList.add('hidden');
+            contactSuccessMessage.classList.remove('hidden');
+          })
+          .catch(error => {
+            alert("Error submitting message: " + error.message);
+          });
+      });
+    }
+
+    // --- Form Wizard Controls ---
+    document.querySelectorAll('.next-step-btn:not([data-navigation-ready])').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetStep = parseInt(btn.getAttribute('data-target-step'));
+
+        // Basic validation for Step 1
+        if (targetStep === 2) {
+          const childName = document.getElementById('childName').value.trim();
+          const childDob = document.getElementById('childDob').value;
+          const childGender = document.getElementById('childGender').value;
+          const gradeSelection = document.getElementById('gradeSelection').value;
+
+          if (!childName || !childDob || !childGender || !gradeSelection) {
+            alert('Please fill out all required child details! 🎈');
+            return;
+          }
+        }
+
+        // Basic validation for Step 2
+        if (targetStep === 3) {
+          const parentName = document.getElementById('parentName').value.trim();
+          const parentPhone = document.getElementById('parentPhone').value.trim();
+          const parentEmail = document.getElementById('parentEmail').value.trim();
+          const parentAddress = document.getElementById('parentAddress').value.trim();
+
+          if (!parentName || !parentPhone || !parentEmail || !parentAddress) {
+            alert('Please fill out all parent or guardian info! 👨‍👩‍👧‍👦');
+            return;
+          }
+
+          // Populate step 3 preview
+          revChildName.textContent = document.getElementById('childName').value;
+          revGrade.textContent = document.getElementById('gradeSelection').value;
+          revDob.textContent = document.getElementById('childDob').value;
+          revGender.textContent = document.getElementById('childGender').value;
+          revParentName.textContent = parentName;
+          revPhone.textContent = parentPhone;
+          revEmail.textContent = parentEmail;
+        }
+
+        showStep(targetStep);
+      });
+    });
+
+    document.querySelectorAll('.prev-step-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetStep = parseInt(btn.getAttribute('data-target-step'));
+        showStep(targetStep);
+      });
+    });
+
+    function showStep(stepNum) {
+      stepPanes.forEach((pane, idx) => {
+        if (idx + 1 === stepNum) {
+          pane.classList.add('active');
+        } else {
+          pane.classList.remove('active');
+        }
+      });
+
+      progressSteps.forEach((step, idx) => {
+        if (idx + 1 <= stepNum) {
+          step.classList.add('active');
+        } else {
+          step.classList.remove('active');
+        }
+      });
+    }
+
+    // --- Form Submit ---
+    admissionForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const customId = 'APP-' + (1000 + Math.floor(Math.random() * 9000));
+      const newApp = {
+        childName: document.getElementById('childName').value.trim(),
+        childDob: document.getElementById('childDob').value,
+        childGender: document.getElementById('childGender').value,
+        grade: document.getElementById('gradeSelection').value,
+        parentName: document.getElementById('parentName').value.trim(),
+        parentPhone: document.getElementById('parentPhone').value.trim(),
+        parentEmail: document.getElementById('parentEmail').value.trim(),
+        parentAddress: document.getElementById('parentAddress').value.trim(),
+        specialNotes: document.getElementById('specialNotes').value.trim(),
+        status: 'Pending',
         dateAdded: new Date().toLocaleDateString()
       };
 
-      const customId = 'MSG-' + (1000 + Math.floor(Math.random() * 9000));
-
-      db.collection('messages').doc(customId).set(newMsg)
+      db.collection('applications').doc(customId).set(newApp)
         .then(() => {
-          schoolContactForm.classList.add('hidden');
-          contactSuccessMessage.classList.remove('hidden');
+          submittedTicketId.textContent = customId;
+          admissionForm.classList.add('hidden');
+          formSuccessCard.classList.remove('hidden');
         })
         .catch(error => {
-          alert("Error submitting message: " + error.message);
+          alert("Error submitting application: " + error.message);
         });
     });
-  }
 
-  // --- Form Wizard Controls ---
-  document.querySelectorAll('.next-step-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetStep = parseInt(btn.getAttribute('data-target-step'));
-
-      // Basic validation for Step 1
-      if (targetStep === 2) {
-        const childName = document.getElementById('childName').value.trim();
-        const childDob = document.getElementById('childDob').value;
-        const childGender = document.getElementById('childGender').value;
-        const gradeSelection = document.getElementById('gradeSelection').value;
-
-        if (!childName || !childDob || !childGender || !gradeSelection) {
-          alert('Please fill out all required child details! 🎈');
-          return;
-        }
-      }
-
-      // Basic validation for Step 2
-      if (targetStep === 3) {
-        const parentName = document.getElementById('parentName').value.trim();
-        const parentPhone = document.getElementById('parentPhone').value.trim();
-        const parentEmail = document.getElementById('parentEmail').value.trim();
-        const parentAddress = document.getElementById('parentAddress').value.trim();
-
-        if (!parentName || !parentPhone || !parentEmail || !parentAddress) {
-          alert('Please fill out all parent or guardian info! 👨‍👩‍👧‍👦');
-          return;
-        }
-
-        // Populate step 3 preview
-        revChildName.textContent = document.getElementById('childName').value;
-        revGrade.textContent = document.getElementById('gradeSelection').value;
-        revDob.textContent = document.getElementById('childDob').value;
-        revGender.textContent = document.getElementById('childGender').value;
-        revParentName.textContent = parentName;
-        revPhone.textContent = parentPhone;
-        revEmail.textContent = parentEmail;
-      }
-
-      showStep(targetStep);
-    });
-  });
-
-  document.querySelectorAll('.prev-step-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetStep = parseInt(btn.getAttribute('data-target-step'));
-      showStep(targetStep);
-    });
-  });
-
-  function showStep(stepNum) {
-    stepPanes.forEach((pane, idx) => {
-      if (idx + 1 === stepNum) {
-        pane.classList.add('active');
-      } else {
-        pane.classList.remove('active');
-      }
+    resetFormBtn.addEventListener('click', () => {
+      admissionForm.reset();
+      admissionForm.classList.remove('hidden');
+      formSuccessCard.classList.add('hidden');
+      showStep(1);
     });
 
-    progressSteps.forEach((step, idx) => {
-      if (idx + 1 <= stepNum) {
-        step.classList.add('active');
-      } else {
-        step.classList.remove('active');
-      }
-    });
-  }
+    // --- Admin Dashboard Rendering & Stats ---
+    function renderAdminDashboard() {
+      // Calc stats
+      const total = applications.length;
+      const pending = applications.filter(a => a.status === 'Pending').length;
+      const approved = applications.filter(a => a.status === 'Approved').length;
+      const rejected = applications.filter(a => a.status === 'Rejected').length;
 
-  // --- Form Submit ---
-  admissionForm.addEventListener('submit', (e) => {
-    e.preventDefault();
+      statTotalVal.textContent = total;
+      statPendingVal.textContent = pending;
+      statApprovedVal.textContent = approved;
+      statRejectedVal.textContent = rejected;
 
-    const customId = 'APP-' + (1000 + Math.floor(Math.random() * 9000));
-    const newApp = {
-      childName: document.getElementById('childName').value.trim(),
-      childDob: document.getElementById('childDob').value,
-      childGender: document.getElementById('childGender').value,
-      grade: document.getElementById('gradeSelection').value,
-      parentName: document.getElementById('parentName').value.trim(),
-      parentPhone: document.getElementById('parentPhone').value.trim(),
-      parentEmail: document.getElementById('parentEmail').value.trim(),
-      parentAddress: document.getElementById('parentAddress').value.trim(),
-      specialNotes: document.getElementById('specialNotes').value.trim(),
-      status: 'Pending',
-      dateAdded: new Date().toLocaleDateString()
-    };
+      // Filter list
+      const searchQuery = adminSearchInput.value.toLowerCase();
+      const gradeFilter = filterGradeSelect.value;
+      const statusFilter = filterStatusSelect.value;
 
-    db.collection('applications').doc(customId).set(newApp)
-      .then(() => {
-        submittedTicketId.textContent = customId;
-        admissionForm.classList.add('hidden');
-        formSuccessCard.classList.remove('hidden');
-        // Dispatch email notification
-        sendNotificationEmail(newApp.parentEmail, newApp.parentName, newApp.childName, 'Pending', customId);
-      })
-      .catch(error => {
-        alert("Error submitting application: " + error.message);
+      const filtered = applications.filter(app => {
+        const matchSearch = app.childName.toLowerCase().includes(searchQuery) ||
+          app.parentName.toLowerCase().includes(searchQuery);
+        const matchGrade = gradeFilter === 'ALL' || app.grade === gradeFilter;
+        const matchStatus = statusFilter === 'ALL' || app.status === statusFilter;
+        return matchSearch && matchGrade && matchStatus;
       });
-  });
 
-  resetFormBtn.addEventListener('click', () => {
-    admissionForm.reset();
-    admissionForm.classList.remove('hidden');
-    formSuccessCard.classList.add('hidden');
-    showStep(1);
-  });
-
-  // --- Admin Dashboard Rendering & Stats ---
-  function renderAdminDashboard() {
-    // Calc stats
-    const total = applications.length;
-    const pending = applications.filter(a => a.status === 'Pending').length;
-    const approved = applications.filter(a => a.status === 'Approved').length;
-    const rejected = applications.filter(a => a.status === 'Rejected').length;
-
-    statTotalVal.textContent = total;
-    statPendingVal.textContent = pending;
-    statApprovedVal.textContent = approved;
-    statRejectedVal.textContent = rejected;
-
-    // Filter list
-    const searchQuery = adminSearchInput.value.toLowerCase();
-    const gradeFilter = filterGradeSelect.value;
-    const statusFilter = filterStatusSelect.value;
-
-    const filtered = applications.filter(app => {
-      const matchSearch = app.childName.toLowerCase().includes(searchQuery) ||
-        app.parentName.toLowerCase().includes(searchQuery);
-      const matchGrade = gradeFilter === 'ALL' || app.grade === gradeFilter;
-      const matchStatus = statusFilter === 'ALL' || app.status === statusFilter;
-      return matchSearch && matchGrade && matchStatus;
-    });
-
-    // Populate Table
-    if (filtered.length === 0) {
-      applicantsTableBody.innerHTML = `
+      // Populate Table
+      if (filtered.length === 0) {
+        applicantsTableBody.innerHTML = `
         <tr>
           <td colspan="7" class="empty-table-state">
             <span class="empty-icon">📭</span>
@@ -516,8 +680,8 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
         </tr>
       `;
-    } else {
-      applicantsTableBody.innerHTML = filtered.map(app => `
+      } else {
+        applicantsTableBody.innerHTML = filtered.map(app => `
         <tr>
           <td><strong>${app.id}</strong></td>
           <td>
@@ -542,50 +706,44 @@ document.addEventListener('DOMContentLoaded', () => {
         </tr>
       `).join('');
 
-      // Wire action events
-      document.querySelectorAll('.action-btn.view').forEach(btn => {
-        btn.addEventListener('click', () => openAppDetails(btn.getAttribute('data-id')));
-      });
-      document.querySelectorAll('.action-btn.approve').forEach(btn => {
-        btn.addEventListener('click', () => updateAppStatus(btn.getAttribute('data-id'), 'Approved'));
-      });
-      document.querySelectorAll('.action-btn.reject').forEach(btn => {
-        btn.addEventListener('click', () => updateAppStatus(btn.getAttribute('data-id'), 'Rejected'));
-      });
-      document.querySelectorAll('.action-btn.delete').forEach(btn => {
-        btn.addEventListener('click', () => deleteApp(btn.getAttribute('data-id')));
-      });
+        // Wire action events
+        document.querySelectorAll('.action-btn.view').forEach(btn => {
+          btn.addEventListener('click', () => openAppDetails(btn.getAttribute('data-id')));
+        });
+        document.querySelectorAll('.action-btn.approve').forEach(btn => {
+          btn.addEventListener('click', () => updateAppStatus(btn.getAttribute('data-id'), 'Approved'));
+        });
+        document.querySelectorAll('.action-btn.reject').forEach(btn => {
+          btn.addEventListener('click', () => updateAppStatus(btn.getAttribute('data-id'), 'Rejected'));
+        });
+        document.querySelectorAll('.action-btn.delete').forEach(btn => {
+          btn.addEventListener('click', () => deleteApp(btn.getAttribute('data-id')));
+        });
+      }
     }
-  }
 
-  // --- Actions ---
-  function updateAppStatus(id, newStatus) {
-    db.collection('applications').doc(id).update({ status: newStatus })
-      .then(() => {
-        const app = applications.find(a => a.id === id);
-        if (app) {
-          sendNotificationEmail(app.parentEmail, app.parentName, app.childName, newStatus, id);
-        }
-      })
-      .catch(error => {
-        alert("Error updating application: " + error.message);
-      });
-  }
-
-  function deleteApp(id) {
-    if (confirm('Are you sure you want to delete this applicant? 🗑️')) {
-      db.collection('applications').doc(id).delete()
+    // --- Actions ---
+    function updateAppStatus(id, newStatus) {
+      db.collection('applications').doc(id).update({ status: newStatus })
         .catch(error => {
-          alert("Error deleting application: " + error.message);
+          alert("Error updating application: " + error.message);
         });
     }
-  }
 
-  function openAppDetails(id) {
-    const app = applications.find(a => a.id === id);
-    if (!app) return;
+    function deleteApp(id) {
+      if (confirm('Are you sure you want to delete this applicant? 🗑️')) {
+        db.collection('applications').doc(id).delete()
+          .catch(error => {
+            alert("Error deleting application: " + error.message);
+          });
+      }
+    }
 
-    modalDetailsBody.innerHTML = `
+    function openAppDetails(id) {
+      const app = applications.find(a => a.id === id);
+      if (!app) return;
+
+      modalDetailsBody.innerHTML = `
       <div class="print-only-header" style="text-align: center; border-bottom: 3px double #000; padding-bottom: 15px; margin-bottom: 25px;">
         <h2 style="margin: 0; font-size: 1.6rem; font-weight: 800; text-transform: uppercase; color: #000; letter-spacing: 1px;">Vahinija Global Play School & Grades 1-7</h2>
         <p style="margin: 5px 0 0 0; font-size: 0.95rem; font-weight: 600; color: #475569; text-transform: uppercase;">Official Admission Application Record</p>
@@ -644,46 +802,46 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
 
-    detailsModal.classList.remove('hidden');
-  }
+      detailsModal.classList.remove('hidden');
+    }
 
-  // --- Modal Events ---
-  function closeModal() {
-    detailsModal.classList.add('hidden');
-  }
-  closeModalBtn.addEventListener('click', closeModal);
-  closeModalFooterBtn.addEventListener('click', closeModal);
+    // --- Modal Events ---
+    function closeModal() {
+      detailsModal.classList.add('hidden');
+    }
+    closeModalBtn.addEventListener('click', closeModal);
+    closeModalFooterBtn.addEventListener('click', closeModal);
 
-  // --- Dashboard Filters Events ---
-  adminSearchInput.addEventListener('input', renderAdminDashboard);
-  filterGradeSelect.addEventListener('change', renderAdminDashboard);
-  filterStatusSelect.addEventListener('change', renderAdminDashboard);
+    // --- Dashboard Filters Events ---
+    adminSearchInput.addEventListener('input', renderAdminDashboard);
+    filterGradeSelect.addEventListener('change', renderAdminDashboard);
+    filterStatusSelect.addEventListener('change', renderAdminDashboard);
 
-  clearFiltersBtn.addEventListener('click', () => {
-    adminSearchInput.value = '';
-    filterGradeSelect.value = 'ALL';
-    filterStatusSelect.value = 'ALL';
-    renderAdminDashboard();
-  });
-
-  // --- Messages Dashboard Rendering & Actions ---
-  function renderMessagesDashboard() {
-    // Calc stats
-    const total = messages.length;
-    msgStatTotalVal.textContent = total;
-
-    // Filter list
-    const searchQuery = adminMsgSearchInput.value.toLowerCase();
-
-    const filtered = messages.filter(msg => {
-      return msg.name.toLowerCase().includes(searchQuery) ||
-        msg.email.toLowerCase().includes(searchQuery) ||
-        msg.message.toLowerCase().includes(searchQuery);
+    clearFiltersBtn.addEventListener('click', () => {
+      adminSearchInput.value = '';
+      filterGradeSelect.value = 'ALL';
+      filterStatusSelect.value = 'ALL';
+      renderAdminDashboard();
     });
 
-    // Populate Table
-    if (filtered.length === 0) {
-      messagesTableBody.innerHTML = `
+    // --- Messages Dashboard Rendering & Actions ---
+    function renderMessagesDashboard() {
+      // Calc stats
+      const total = messages.length;
+      msgStatTotalVal.textContent = total;
+
+      // Filter list
+      const searchQuery = adminMsgSearchInput.value.toLowerCase();
+
+      const filtered = messages.filter(msg => {
+        return msg.name.toLowerCase().includes(searchQuery) ||
+          msg.email.toLowerCase().includes(searchQuery) ||
+          msg.message.toLowerCase().includes(searchQuery);
+      });
+
+      // Populate Table
+      if (filtered.length === 0) {
+        messagesTableBody.innerHTML = `
         <tr>
           <td colspan="5" class="empty-table-state">
             <span class="empty-icon">📭</span>
@@ -691,10 +849,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
         </tr>
       `;
-    } else {
-      messagesTableBody.innerHTML = filtered.map(msg => {
-        const snippet = msg.message.length > 60 ? msg.message.substring(0, 60) + '...' : msg.message;
-        return `
+      } else {
+        messagesTableBody.innerHTML = filtered.map(msg => {
+          const snippet = msg.message.length > 60 ? msg.message.substring(0, 60) + '...' : msg.message;
+          return `
           <tr>
             <td><strong>${msg.id}</strong></td>
             <td>
@@ -709,32 +867,32 @@ document.addEventListener('DOMContentLoaded', () => {
             </td>
           </tr>
         `;
-      }).join('');
+        }).join('');
 
-      // Wire action events
-      document.querySelectorAll('.action-btn.view-msg').forEach(btn => {
-        btn.addEventListener('click', () => openMsgDetails(btn.getAttribute('data-id')));
-      });
-      document.querySelectorAll('.action-btn.delete-msg').forEach(btn => {
-        btn.addEventListener('click', () => deleteMsg(btn.getAttribute('data-id')));
-      });
-    }
-  }
-
-  function deleteMsg(id) {
-    if (confirm('Are you sure you want to delete this message? 🗑️')) {
-      db.collection('messages').doc(id).delete()
-        .catch(error => {
-          alert("Error deleting message: " + error.message);
+        // Wire action events
+        document.querySelectorAll('.action-btn.view-msg').forEach(btn => {
+          btn.addEventListener('click', () => openMsgDetails(btn.getAttribute('data-id')));
         });
+        document.querySelectorAll('.action-btn.delete-msg').forEach(btn => {
+          btn.addEventListener('click', () => deleteMsg(btn.getAttribute('data-id')));
+        });
+      }
     }
-  }
 
-  function openMsgDetails(id) {
-    const msg = messages.find(m => m.id === id);
-    if (!msg) return;
+    function deleteMsg(id) {
+      if (confirm('Are you sure you want to delete this message? 🗑️')) {
+        db.collection('messages').doc(id).delete()
+          .catch(error => {
+            alert("Error deleting message: " + error.message);
+          });
+      }
+    }
 
-    modalDetailsBody.innerHTML = `
+    function openMsgDetails(id) {
+      const msg = messages.find(m => m.id === id);
+      if (!msg) return;
+
+      modalDetailsBody.innerHTML = `
       <div class="detail-row">
         <div class="detail-label">Message ID:</div>
         <div class="detail-val"><strong>${msg.id}</strong></div>
@@ -757,147 +915,147 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
 
-    detailsModal.classList.remove('hidden');
-  }
+      detailsModal.classList.remove('hidden');
+    }
 
-  // --- Messages Filter Events ---
-  adminMsgSearchInput.addEventListener('input', renderMessagesDashboard);
-  clearMsgFiltersBtn.addEventListener('click', () => {
-    adminMsgSearchInput.value = '';
-    renderMessagesDashboard();
-  });
+    // --- Messages Filter Events ---
+    adminMsgSearchInput.addEventListener('input', renderMessagesDashboard);
+    clearMsgFiltersBtn.addEventListener('click', () => {
+      adminMsgSearchInput.value = '';
+      renderMessagesDashboard();
+    });
 
 
 
-  // --- Clear All Data ---
-  // --- Clear All Data ---
-  clearAllDataBtn.addEventListener('click', () => {
-    if (confirm('Are you sure you want to clear all admission applications and messages? 🗑️ This action cannot be undone.')) {
-      const batch = db.batch();
-      
-      const appPromise = db.collection('applications').get().then(snapshot => {
-        snapshot.forEach(doc => {
-          batch.delete(doc.ref);
+    // --- Clear All Data ---
+    // --- Clear All Data ---
+    clearAllDataBtn.addEventListener('click', () => {
+      if (confirm('Are you sure you want to clear all admission applications and messages? 🗑️ This action cannot be undone.')) {
+        const batch = db.batch();
+
+        const appPromise = db.collection('applications').get().then(snapshot => {
+          snapshot.forEach(doc => {
+            batch.delete(doc.ref);
+          });
         });
-      });
-      
-      const msgPromise = db.collection('messages').get().then(snapshot => {
-        snapshot.forEach(doc => {
-          batch.delete(doc.ref);
+
+        const msgPromise = db.collection('messages').get().then(snapshot => {
+          snapshot.forEach(doc => {
+            batch.delete(doc.ref);
+          });
         });
-      });
-      
-      Promise.all([appPromise, msgPromise]).then(() => {
-        batch.commit().then(() => {
-          alert('All admission applications and messages have been cleared! 🧹');
+
+        Promise.all([appPromise, msgPromise]).then(() => {
+          batch.commit().then(() => {
+            alert('All admission applications and messages have been cleared! 🧹');
+          });
+        }).catch(error => {
+          alert("Error clearing data: " + error.message);
         });
-      }).catch(error => {
-        alert("Error clearing data: " + error.message);
+      }
+    });
+
+
+    // --- Photo File Reader (Image to Base64) ---
+    function handleImageUpload(inputEl, hiddenInputEl, previewEl, previewContainerEl, maxSizeKb = 800) {
+      inputEl.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (file.size > maxSizeKb * 1024) {
+          alert(`Image is too large! Please choose an image smaller than ${maxSizeKb}KB. 📸`);
+          inputEl.value = '';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const dataUrl = event.target.result;
+          hiddenInputEl.value = dataUrl;
+          if (previewEl) previewEl.src = dataUrl;
+          if (previewContainerEl) previewContainerEl.style.display = 'flex';
+        };
+        reader.readAsDataURL(file);
       });
     }
-  });
 
+    if (studentPhotoUpload && studentPhotoDataUrl && studentPhotoPreview && studentPhotoPreviewContainer) {
+      handleImageUpload(studentPhotoUpload, studentPhotoDataUrl, studentPhotoPreview, studentPhotoPreviewContainer);
+    }
 
-  // --- Photo File Reader (Image to Base64) ---
-  function handleImageUpload(inputEl, hiddenInputEl, previewEl, previewContainerEl) {
-    inputEl.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+    if (editStudentPhotoUpload && editStudentPhotoDataUrl && editStudentPhotoPreview && editStudentPhotoPreviewContainer) {
+      handleImageUpload(editStudentPhotoUpload, editStudentPhotoDataUrl, editStudentPhotoPreview, editStudentPhotoPreviewContainer);
+    }
 
-      if (file.size > 800 * 1024) {
-        alert("Image is too large! Please choose an image smaller than 800KB. 📸");
-        inputEl.value = '';
-        return;
-      }
+    if (activityPhotoUpload && activityPhotoDataUrl && activityPhotoPreview && activityPhotoPreviewContainer) {
+      handleImageUpload(activityPhotoUpload, activityPhotoDataUrl, activityPhotoPreview, activityPhotoPreviewContainer, 1536);
+    }
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target.result;
-        hiddenInputEl.value = dataUrl;
-        if (previewEl) previewEl.src = dataUrl;
-        if (previewContainerEl) previewContainerEl.style.display = 'flex';
-      };
-      reader.readAsDataURL(file);
-    });
-  }
+    // --- Add Student Submit Handler ---
+    if (studentForm) {
+      studentForm.addEventListener('submit', (e) => {
+        e.preventDefault();
 
-  if (studentPhotoUpload && studentPhotoDataUrl && studentPhotoPreview && studentPhotoPreviewContainer) {
-    handleImageUpload(studentPhotoUpload, studentPhotoDataUrl, studentPhotoPreview, studentPhotoPreviewContainer);
-  }
+        const defaultAvatar = 'https://i.ibb.co/CsP3c9Nh/school.png';
+        const annualFee = Number(studentFee.value) || 0;
 
-  if (editStudentPhotoUpload && editStudentPhotoDataUrl && editStudentPhotoPreview && editStudentPhotoPreviewContainer) {
-    handleImageUpload(editStudentPhotoUpload, editStudentPhotoDataUrl, editStudentPhotoPreview, editStudentPhotoPreviewContainer);
-  }
+        const newStudent = {
+          studentName: studentName.value.trim(),
+          studentClass: studentClass.value,
+          studentFee: annualFee,
+          paidFee: 0,
+          balanceFee: annualFee,
+          photoUrl: studentPhotoDataUrl.value || defaultAvatar,
+          dateRegistered: new Date().toLocaleDateString()
+        };
 
-  if (activityPhotoUpload && activityPhotoDataUrl && activityPhotoPreview && activityPhotoPreviewContainer) {
-    handleImageUpload(activityPhotoUpload, activityPhotoDataUrl, activityPhotoPreview, activityPhotoPreviewContainer);
-  }
+        const customId = customStudentId.value.trim();
+        if (!customId) {
+          alert("Please enter a valid Student ID! ⚠️");
+          return;
+        }
 
-  // --- Add Student Submit Handler ---
-  if (studentForm) {
-    studentForm.addEventListener('submit', (e) => {
-      e.preventDefault();
+        // Check for uniqueness in DB
+        db.collection('students').doc(customId).get()
+          .then(doc => {
+            if (doc.exists) {
+              alert(`A student with ID "${customId}" already exists! 🚫 Please choose a unique ID.`);
+              return;
+            }
 
-      const defaultAvatar = 'https://i.ibb.co/CsP3c9Nh/school.png';
-      const annualFee = Number(studentFee.value) || 0;
+            db.collection('students').doc(customId).set(newStudent)
+              .then(() => {
+                studentForm.reset();
+                if (studentPhotoPreviewContainer) {
+                  studentPhotoPreviewContainer.style.display = 'none';
+                }
+                studentPhotoDataUrl.value = '';
+              })
+              .catch(error => {
+                alert("Error adding student: " + error.message);
+              });
+          })
+          .catch(error => {
+            alert("Error verifying student ID: " + error.message);
+          });
+      });
+    }
 
-      const newStudent = {
-        studentName: studentName.value.trim(),
-        studentClass: studentClass.value,
-        studentFee: annualFee,
-        paidFee: 0,
-        balanceFee: annualFee,
-        photoUrl: studentPhotoDataUrl.value || defaultAvatar,
-        dateRegistered: new Date().toLocaleDateString()
-      };
+    // --- Render Students Dashboard (List, Search & Filter) ---
+    function renderStudentsDashboard() {
+      if (!studentListTableBody) return;
 
-      const customId = customStudentId.value.trim();
-      if (!customId) {
-        alert("Please enter a valid Student ID! ⚠️");
-        return;
-      }
+      const searchQuery = studentSearchInput.value.toLowerCase().trim();
+      const classFilter = studentClassFilter.value;
 
-      // Check for uniqueness in DB
-      db.collection('students').doc(customId).get()
-        .then(doc => {
-          if (doc.exists) {
-            alert(`A student with ID "${customId}" already exists! 🚫 Please choose a unique ID.`);
-            return;
-          }
+      const filtered = students.filter(s => {
+        const matchSearch = s.studentName.toLowerCase().includes(searchQuery);
+        const matchClass = classFilter === 'ALL' || s.studentClass === classFilter;
+        return matchSearch && matchClass;
+      });
 
-          db.collection('students').doc(customId).set(newStudent)
-            .then(() => {
-              studentForm.reset();
-              if (studentPhotoPreviewContainer) {
-                studentPhotoPreviewContainer.style.display = 'none';
-              }
-              studentPhotoDataUrl.value = '';
-            })
-            .catch(error => {
-              alert("Error adding student: " + error.message);
-            });
-        })
-        .catch(error => {
-          alert("Error verifying student ID: " + error.message);
-        });
-    });
-  }
-
-  // --- Render Students Dashboard (List, Search & Filter) ---
-  function renderStudentsDashboard() {
-    if (!studentListTableBody) return;
-
-    const searchQuery = studentSearchInput.value.toLowerCase().trim();
-    const classFilter = studentClassFilter.value;
-
-    const filtered = students.filter(s => {
-      const matchSearch = s.studentName.toLowerCase().includes(searchQuery);
-      const matchClass = classFilter === 'ALL' || s.studentClass === classFilter;
-      return matchSearch && matchClass;
-    });
-
-    if (filtered.length === 0) {
-      studentListTableBody.innerHTML = `
+      if (filtered.length === 0) {
+        studentListTableBody.innerHTML = `
         <tr>
           <td colspan="9" class="empty-table-state">
             <span class="empty-icon">🎒</span>
@@ -905,15 +1063,15 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
         </tr>
       `;
-    } else {
-      const sortedStudents = [...filtered].sort((a, b) => a.studentName.localeCompare(b.studentName));
+      } else {
+        const sortedStudents = [...filtered].sort((a, b) => a.studentName.localeCompare(b.studentName));
 
-      studentListTableBody.innerHTML = sortedStudents.map(s => {
-        const annualFee = Number(s.studentFee) || 0;
-        const paidFee = Number(s.paidFee) || 0;
-        const balanceFee = (typeof s.balanceFee !== 'undefined') ? Number(s.balanceFee) : (annualFee - paidFee);
+        studentListTableBody.innerHTML = sortedStudents.map(s => {
+          const annualFee = Number(s.studentFee) || 0;
+          const paidFee = Number(s.paidFee) || 0;
+          const balanceFee = (typeof s.balanceFee !== 'undefined') ? Number(s.balanceFee) : (annualFee - paidFee);
 
-        return `
+          return `
           <tr>
             <td><strong>${s.id}</strong></td>
             <td style="text-align: center;">
@@ -932,45 +1090,45 @@ document.addEventListener('DOMContentLoaded', () => {
             </td>
           </tr>
         `;
-      }).join('');
+        }).join('');
 
-      // Wire action buttons
-      document.querySelectorAll('.view-student-btn').forEach(btn => {
-        btn.addEventListener('click', () => openStudentDetails(btn.getAttribute('data-id')));
-      });
-      document.querySelectorAll('.edit-student-btn').forEach(btn => {
-        btn.addEventListener('click', () => openEditStudentModal(btn.getAttribute('data-id')));
-      });
-      document.querySelectorAll('.delete-student-btn').forEach(btn => {
-        btn.addEventListener('click', () => deleteStudent(btn.getAttribute('data-id')));
+        // Wire action buttons
+        document.querySelectorAll('.view-student-btn').forEach(btn => {
+          btn.addEventListener('click', () => openStudentDetails(btn.getAttribute('data-id')));
+        });
+        document.querySelectorAll('.edit-student-btn').forEach(btn => {
+          btn.addEventListener('click', () => openEditStudentModal(btn.getAttribute('data-id')));
+        });
+        document.querySelectorAll('.delete-student-btn').forEach(btn => {
+          btn.addEventListener('click', () => deleteStudent(btn.getAttribute('data-id')));
+        });
+      }
+    }
+
+    if (studentSearchInput) {
+      studentSearchInput.addEventListener('input', renderStudentsDashboard);
+    }
+    if (studentClassFilter) {
+      studentClassFilter.addEventListener('change', renderStudentsDashboard);
+    }
+    if (clearStudentFiltersBtn) {
+      clearStudentFiltersBtn.addEventListener('click', () => {
+        studentSearchInput.value = '';
+        studentClassFilter.value = 'ALL';
+        renderStudentsDashboard();
       });
     }
-  }
 
-  if (studentSearchInput) {
-    studentSearchInput.addEventListener('input', renderStudentsDashboard);
-  }
-  if (studentClassFilter) {
-    studentClassFilter.addEventListener('change', renderStudentsDashboard);
-  }
-  if (clearStudentFiltersBtn) {
-    clearStudentFiltersBtn.addEventListener('click', () => {
-      studentSearchInput.value = '';
-      studentClassFilter.value = 'ALL';
-      renderStudentsDashboard();
-    });
-  }
+    // --- View Student Details Method ---
+    function openStudentDetails(id) {
+      const s = students.find(item => item.id === id);
+      if (!s) return;
 
-  // --- View Student Details Method ---
-  function openStudentDetails(id) {
-    const s = students.find(item => item.id === id);
-    if (!s) return;
+      const annualFee = Number(s.studentFee) || 0;
+      const paid = Number(s.paidFee) || 0;
+      const balance = (typeof s.balanceFee !== 'undefined') ? Number(s.balanceFee) : (annualFee - paid);
 
-    const annualFee = Number(s.studentFee) || 0;
-    const paid = Number(s.paidFee) || 0;
-    const balance = (typeof s.balanceFee !== 'undefined') ? Number(s.balanceFee) : (annualFee - paid);
-
-    modalDetailsBody.innerHTML = `
+      modalDetailsBody.innerHTML = `
       <div class="print-only-header" style="text-align: center; border-bottom: 3px double #000; padding-bottom: 15px; margin-bottom: 25px;">
         <h2 style="margin: 0; font-size: 1.6rem; font-weight: 800; text-transform: uppercase; color: #000; letter-spacing: 1px;">Vahinija Global Play School & Grades 1-7</h2>
         <p style="margin: 5px 0 0 0; font-size: 0.95rem; font-weight: 600; color: #475569; text-transform: uppercase;">Official Student Enrollment Record</p>
@@ -1014,131 +1172,131 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
 
-    detailsModal.classList.remove('hidden');
-  }
+      detailsModal.classList.remove('hidden');
+    }
 
-  // --- Edit & Delete Student Methods ---
-  function openEditStudentModal(id) {
-    const s = students.find(item => item.id === id);
-    if (!s) return;
-
-    const annualFee = Number(s.studentFee) || 0;
-    const paid = Number(s.paidFee) || 0;
-    const balance = (typeof s.balanceFee !== 'undefined') ? Number(s.balanceFee) : (annualFee - paid);
-
-    editStudentId.value = s.id;
-    editStudentName.value = s.studentName;
-    editStudentClass.value = s.studentClass;
-    editStudentFee.value = annualFee;
-    
-    // Set read-only displays
-    editStudentPaidDisplay.textContent = '₹' + paid;
-    editStudentBalanceDisplay.textContent = '₹' + balance;
-    editStudentPayAmount.value = ''; // Reset input field
-
-    editStudentPhotoDataUrl.value = s.photoUrl || '';
-    editStudentPhotoPreview.src = s.photoUrl || 'https://i.ibb.co/CsP3c9Nh/school.png';
-    editStudentPhotoPreviewContainer.style.display = 'flex';
-
-    studentEditModal.classList.remove('hidden');
-  }
-
-  function closeStudentEditModal() {
-    studentEditModal.classList.add('hidden');
-    editStudentForm.reset();
-  }
-
-  if (closeStudentEditModalBtn) {
-    closeStudentEditModalBtn.addEventListener('click', closeStudentEditModal);
-  }
-  if (closeStudentEditModalFooterBtn) {
-    closeStudentEditModalFooterBtn.addEventListener('click', closeStudentEditModal);
-  }
-
-  if (editStudentForm) {
-    editStudentForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-
-      const id = editStudentId.value;
+    // --- Edit & Delete Student Methods ---
+    function openEditStudentModal(id) {
       const s = students.find(item => item.id === id);
       if (!s) return;
 
-      const updatedFee = Number(editStudentFee.value) || 0;
-      const payAmount = Number(editStudentPayAmount.value) || 0;
+      const annualFee = Number(s.studentFee) || 0;
+      const paid = Number(s.paidFee) || 0;
+      const balance = (typeof s.balanceFee !== 'undefined') ? Number(s.balanceFee) : (annualFee - paid);
 
-      // Add to paid fee mathematically
-      const currentPaid = Number(s.paidFee) || 0;
-      const newPaid = Number((currentPaid + payAmount).toFixed(2));
-      const newBalance = Number((updatedFee - newPaid).toFixed(2));
+      editStudentId.value = s.id;
+      editStudentName.value = s.studentName;
+      editStudentClass.value = s.studentClass;
+      editStudentFee.value = annualFee;
 
-      const updatedStudent = {
-        studentName: editStudentName.value.trim(),
-        studentClass: editStudentClass.value,
-        studentFee: updatedFee,
-        paidFee: newPaid,
-        balanceFee: newBalance,
-        photoUrl: editStudentPhotoDataUrl.value || 'https://i.ibb.co/CsP3c9Nh/school.png'
-      };
+      // Set read-only displays
+      editStudentPaidDisplay.textContent = '₹' + paid;
+      editStudentBalanceDisplay.textContent = '₹' + balance;
+      editStudentPayAmount.value = ''; // Reset input field
 
-      db.collection('students').doc(id).update(updatedStudent)
-        .then(() => {
-          closeStudentEditModal();
-        })
-        .catch(error => {
-          alert("Error updating student: " + error.message);
-        });
-    });
-  }
+      editStudentPhotoDataUrl.value = s.photoUrl || '';
+      editStudentPhotoPreview.src = s.photoUrl || 'https://i.ibb.co/CsP3c9Nh/school.png';
+      editStudentPhotoPreviewContainer.style.display = 'flex';
 
-  function deleteStudent(id) {
-    if (confirm('Are you sure you want to delete this student record? 🗑️')) {
-      db.collection('students').doc(id).delete()
-        .catch(error => {
-          alert("Error deleting student: " + error.message);
-        });
+      studentEditModal.classList.remove('hidden');
     }
-  }
 
-  // --- Add Activity Submit Handler ---
-  if (activityForm) {
-    activityForm.addEventListener('submit', (e) => {
-      e.preventDefault();
+    function closeStudentEditModal() {
+      studentEditModal.classList.add('hidden');
+      editStudentForm.reset();
+    }
 
-      const newActivity = {
-        title: activityTitle.value.trim(),
-        description: activityDescription.value.trim(),
-        photoUrl: activityPhotoDataUrl.value || '',
-        dateAdded: new Date().toISOString()
-      };
+    if (closeStudentEditModalBtn) {
+      closeStudentEditModalBtn.addEventListener('click', closeStudentEditModal);
+    }
+    if (closeStudentEditModalFooterBtn) {
+      closeStudentEditModalFooterBtn.addEventListener('click', closeStudentEditModal);
+    }
 
-      if (!newActivity.photoUrl) {
-        alert("Please upload an image for the activity! 📸");
-        return;
+    if (editStudentForm) {
+      editStudentForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const id = editStudentId.value;
+        const s = students.find(item => item.id === id);
+        if (!s) return;
+
+        const updatedFee = Number(editStudentFee.value) || 0;
+        const payAmount = Number(editStudentPayAmount.value) || 0;
+
+        // Add to paid fee mathematically
+        const currentPaid = Number(s.paidFee) || 0;
+        const newPaid = Number((currentPaid + payAmount).toFixed(2));
+        const newBalance = Number((updatedFee - newPaid).toFixed(2));
+
+        const updatedStudent = {
+          studentName: editStudentName.value.trim(),
+          studentClass: editStudentClass.value,
+          studentFee: updatedFee,
+          paidFee: newPaid,
+          balanceFee: newBalance,
+          photoUrl: editStudentPhotoDataUrl.value || 'https://i.ibb.co/CsP3c9Nh/school.png'
+        };
+
+        db.collection('students').doc(id).update(updatedStudent)
+          .then(() => {
+            closeStudentEditModal();
+          })
+          .catch(error => {
+            alert("Error updating student: " + error.message);
+          });
+      });
+    }
+
+    function deleteStudent(id) {
+      if (confirm('Are you sure you want to delete this student record? 🗑️')) {
+        db.collection('students').doc(id).delete()
+          .catch(error => {
+            alert("Error deleting student: " + error.message);
+          });
       }
+    }
 
-      const customId = 'ACT-' + (1000 + Math.floor(Math.random() * 9000));
+    // --- Add Activity Submit Handler ---
+    if (activityForm) {
+      activityForm.addEventListener('submit', (e) => {
+        e.preventDefault();
 
-      db.collection('activities').doc(customId).set(newActivity)
-        .then(() => {
-          activityForm.reset();
-          if (activityPhotoPreviewContainer) {
-            activityPhotoPreviewContainer.style.display = 'none';
-          }
-          activityPhotoDataUrl.value = '';
-          alert("Activity published successfully! 🌟");
-        })
-        .catch(error => {
-          alert("Error adding activity: " + error.message);
-        });
-    });
-  }
+        const newActivity = {
+          title: activityTitle.value.trim(),
+          description: activityDescription.value.trim(),
+          photoUrl: activityPhotoDataUrl.value || '',
+          dateAdded: new Date().toISOString()
+        };
 
-  // --- Render Activities Dashboard ---
-  function renderActivitiesDashboard() {
-    if (!activityListTableBody) return;
+        if (!newActivity.photoUrl) {
+          alert("Please upload an image for the activity! 📸");
+          return;
+        }
 
-    if (activities.length === 0) {
-      activityListTableBody.innerHTML = `
+        const customId = 'ACT-' + (1000 + Math.floor(Math.random() * 9000));
+
+        db.collection('activities').doc(customId).set(newActivity)
+          .then(() => {
+            activityForm.reset();
+            if (activityPhotoPreviewContainer) {
+              activityPhotoPreviewContainer.style.display = 'none';
+            }
+            activityPhotoDataUrl.value = '';
+            alert("Activity published successfully! 🌟");
+          })
+          .catch(error => {
+            alert("Error adding activity: " + error.message);
+          });
+      });
+    }
+
+    // --- Render Activities Dashboard ---
+    function renderActivitiesDashboard() {
+      if (!activityListTableBody) return;
+
+      if (activities.length === 0) {
+        activityListTableBody.innerHTML = `
         <tr>
           <td colspan="6" class="empty-table-state">
             <span class="empty-icon">🌟</span>
@@ -1146,9 +1304,9 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
         </tr>
       `;
-    } else {
-      activityListTableBody.innerHTML = activities.map(act => {
-        return `
+      } else {
+        activityListTableBody.innerHTML = activities.map(act => {
+          return `
           <tr>
             <td><strong>${act.id}</strong></td>
             <td style="text-align: center;">
@@ -1162,41 +1320,41 @@ document.addEventListener('DOMContentLoaded', () => {
             </td>
           </tr>
         `;
-      }).join('');
+        }).join('');
 
-      // Wire delete buttons
-      document.querySelectorAll('.delete-activity-btn').forEach(btn => {
-        btn.addEventListener('click', () => deleteActivity(btn.getAttribute('data-id')));
-      });
-    }
-  }
-
-  function deleteActivity(id) {
-    if (confirm('Are you sure you want to delete this activity? It will be removed from the front page. 🗑️')) {
-      db.collection('activities').doc(id).delete()
-        .catch(error => {
-          alert("Error deleting activity: " + error.message);
+        // Wire delete buttons
+        document.querySelectorAll('.delete-activity-btn').forEach(btn => {
+          btn.addEventListener('click', () => deleteActivity(btn.getAttribute('data-id')));
         });
+      }
     }
-  }
 
-  // --- Render Front-Page Activities Carousel ---
-  let activityAutoTimer = null;
-  function renderFrontPageActivitiesCarousel() {
-    if (!activityCarouselTrack || !activityCarouselDots) return;
+    function deleteActivity(id) {
+      if (confirm('Are you sure you want to delete this activity? It will be removed from the front page. 🗑️')) {
+        db.collection('activities').doc(id).delete()
+          .catch(error => {
+            alert("Error deleting activity: " + error.message);
+          });
+      }
+    }
 
-    if (activities.length === 0) {
-      activityCarouselTrack.innerHTML = `
+    // --- Render Front-Page Activities Carousel ---
+    let activityAutoTimer = null;
+    function renderFrontPageActivitiesCarousel() {
+      if (!activityCarouselTrack || !activityCarouselDots) return;
+
+      if (activities.length === 0) {
+        activityCarouselTrack.innerHTML = `
         <div style="text-align: center; width: 100%; color: var(--text-color); font-weight: 500; padding: 40px;">
           Check back later for exciting new activities! 🌟
         </div>
       `;
-      activityCarouselDots.innerHTML = '';
-      return;
-    }
+        activityCarouselDots.innerHTML = '';
+        return;
+      }
 
-    // Generate HTML for actual slides
-    const slidesHTML = activities.map(act => `
+      // Generate HTML for actual slides
+      const slidesHTML = activities.map(act => `
       <div class="carousel-slide activity-slide">
         <img src="${act.photoUrl}" alt="${act.title}" />
         <div class="activity-content">
@@ -1206,327 +1364,295 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `).join('');
 
-    activityCarouselTrack.innerHTML = slidesHTML;
+      activityCarouselTrack.innerHTML = slidesHTML;
+      activityCarouselTrack.dataset.activityCount = activities.length;
 
-    // Generate Dots (only for original number of slides)
-    activityCarouselDots.innerHTML = activities.map((_, i) => `
+      // Generate Dots (only for original number of slides)
+      activityCarouselDots.innerHTML = activities.map((_, i) => `
       <span class="dot ${i === 0 ? 'active' : ''}" data-index="${i}"></span>
     `).join('');
 
-    // Re-initialize carousel functionality for Activities
-    initActivityCarousel();
-  }
-
-  function initActivityCarousel() {
-    const track = document.getElementById('activityCarouselTrack');
-    const prevBtn = document.getElementById('activityCarouselPrev');
-    const nextBtn = document.getElementById('activityCarouselNext');
-    const dots = document.querySelectorAll('#activityCarouselDots .dot');
-    const TOTAL = activities.length;
-
-    if (!track || TOTAL === 0) return;
-
-    let currentIndex = 0;
-    const INTERVAL = 3500; // ms between auto-advances
-
-    if (activityAutoTimer) { clearInterval(activityAutoTimer); activityAutoTimer = null; }
-
-    function getSlideWidth() {
-      const slide = track.querySelector('.activity-slide');
-      if (!slide) return 360;
-      const gap = 20;
-      return slide.offsetWidth + gap;
+      // Re-initialize carousel functionality for Activities
+      initActivityCarousel();
     }
 
-    function goTo(index, animate = true) {
-      if(TOTAL === 0) return;
-      currentIndex = ((index % TOTAL) + TOTAL) % TOTAL;
-      const offset = -(currentIndex * getSlideWidth());
-      track.style.animation = 'none'; // stop CSS animation
-      track.style.transition = animate ? 'transform 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
-      track.style.transform  = `translateX(${offset}px)`;
-      
-      dots.forEach((d, i) => {
-        d.classList.toggle('active', i === currentIndex);
-      });
-    }
+    function initActivityCarousel() {
+      const track = document.getElementById('activityCarouselTrack');
+      const prevBtn = document.getElementById('activityCarouselPrev');
+      const nextBtn = document.getElementById('activityCarouselNext');
+      const dots = document.querySelectorAll('#activityCarouselDots .dot');
+      const TOTAL = activities.length;
 
-    function startAuto() {
-      stopAuto();
-      activityAutoTimer = setInterval(() => {
-        goTo(currentIndex + 1);
-      }, INTERVAL);
-    }
+      if (!track || TOTAL === 0) return;
 
-    function stopAuto() {
+      let currentIndex = 0;
+      const INTERVAL = 3500; // ms between auto-advances
+
       if (activityAutoTimer) { clearInterval(activityAutoTimer); activityAutoTimer = null; }
-    }
 
-    if (prevBtn) {
-      // replaceWith clone to remove old listeners in case this is called multiple times
-      const newPrev = prevBtn.cloneNode(true);
-      prevBtn.replaceWith(newPrev);
-      newPrev.addEventListener('click', () => {
-        stopAuto();
-        goTo(currentIndex - 1);
-        startAuto();
-      });
-    }
-
-    if (nextBtn) {
-      const newNext = nextBtn.cloneNode(true);
-      nextBtn.replaceWith(newNext);
-      newNext.addEventListener('click', () => {
-        stopAuto();
-        goTo(currentIndex + 1);
-        startAuto();
-      });
-    }
-
-    const freshDots = document.querySelectorAll('#activityCarouselDots .dot');
-    freshDots.forEach((dot, i) => {
-      dot.addEventListener('click', () => {
-        stopAuto();
-        goTo(i);
-        startAuto();
-      });
-    });
-
-    track.addEventListener('mouseenter', () => { stopAuto(); });
-    track.addEventListener('mouseleave', () => { startAuto(); });
-
-    // Drag / Swipe
-    let dragStartX = 0;
-    let isDragging = false;
-    track.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      dragStartX = e.clientX;
-      stopAuto();
-    });
-
-    document.addEventListener('mouseup', (e) => {
-      if (!isDragging) return;
-      isDragging = false;
-      const diff = dragStartX - e.clientX;
-      if (Math.abs(diff) > 50) {
-        goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
+      function getSlideWidth() {
+        const slide = track.querySelector('.activity-slide');
+        if (!slide) return 360;
+        const gap = 20;
+        return slide.offsetWidth + gap;
       }
-      startAuto();
-    });
 
-    track.addEventListener('touchstart', (e) => {
-      dragStartX = e.touches[0].clientX;
-      stopAuto();
-    }, { passive: true });
+      function goTo(index, animate = true) {
+        if (TOTAL === 0) return;
+        currentIndex = ((index % TOTAL) + TOTAL) % TOTAL;
+        const slide = track.querySelector('.activity-slide');
+        const step = getSlideWidth();
+        const availableWidth = track.parentElement.clientWidth;
+        const contentWidth = TOTAL * step - 20;
+        const isOverflowing = contentWidth > availableWidth;
+        const offset = isOverflowing ? -(currentIndex * step) : 0;
+        track.style.animation = 'none'; // stop CSS animation
+        track.style.transition = animate ? 'transform 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
+        track.style.transform = isOverflowing ? `translateX(${offset}px)` : '';
+        track.classList.toggle('is-overflowing', isOverflowing);
 
-    track.addEventListener('touchend', (e) => {
-      const diff = dragStartX - e.changedTouches[0].clientX;
-      if (Math.abs(diff) > 50) {
-        goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
-      }
-      startAuto();
-    });
-
-    // Start auto-play
-    startAuto();
-  }
-
-  // --- Email Notification Dispatcher (EmailJS) ---
-  function sendNotificationEmail(parentEmail, parentName, childName, status, id) {
-    const EMAILJS_SERVICE_ID = "YOUR_SERVICE_ID";
-    const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
-    const EMAILJS_PUBLIC_KEY = "YOUR_PUBLIC_KEY";
-
-    let emailSubject = '';
-    let emailBody = '';
-
-    if (status === 'Pending') {
-      emailSubject = `Admission Registration Received - ${childName}`;
-      emailBody = `Dear ${parentName},\n\nWe have successfully received your admission application for ${childName} (Application ID: ${id}). It is currently under review by our administration team. We will notify you once the status changes.\n\nWarm regards,\nVahinija Global Play School`;
-    } else if (status === 'Approved') {
-      emailSubject = `Admission CONFIRMED! 🎉 - ${childName}`;
-      emailBody = `Dear ${parentName},\n\nCongratulations! We are delighted to inform you that the admission application for ${childName} (Application ID: ${id}) has been CONFIRMED. Welcome to the Vahinija Global family!\n\nOur administrative desk will contact you shortly to complete the fee payment and onboarding steps.\n\nWarm regards,\nVahinija Global Play School`;
-    } else if (status === 'Rejected') {
-      emailSubject = `Admission Status Update - ${childName}`;
-      emailBody = `Dear ${parentName},\n\nThank you for your interest in Vahinija Global. We are writing to inform you that the application for ${childName} (Application ID: ${id}) has been waitlisted/rejected at this time due to capacity limits. We will contact you if a seat opens up.\n\nWarm regards,\nVahinija Global Play School`;
-    }
-
-    if (typeof emailjs !== 'undefined' && EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID') {
-      emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
-      
-      const templateParams = {
-        to_email: parentEmail,
-        to_name: parentName,
-        child_name: childName,
-        application_id: id,
-        status: status,
-        subject: emailSubject,
-        message: emailBody
-      };
-
-      emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams)
-        .then(() => {
-          showEmailToast(`Email notification successfully sent to ${parentName} (${parentEmail})! 📧`);
-        })
-        .catch(err => {
-          console.error("EmailJS Failed: ", err);
-          showEmailToast(`Simulation: Email dispatched to ${parentEmail} (Real delivery failed: ${err.message}) 📧`);
+        dots.forEach((d, i) => {
+          d.classList.toggle('active', i === currentIndex);
         });
-    } else {
-      showEmailToast(`Simulation: Email notification dispatched to ${parentName} (${parentEmail}) - Status: ${status}! 📧`);
+      }
+
+      function startAuto() {
+        stopAuto();
+        if (TOTAL < 2) return;
+        activityAutoTimer = setInterval(() => {
+          goTo(currentIndex + 1);
+        }, INTERVAL);
+      }
+
+      function stopAuto() {
+        if (activityAutoTimer) { clearInterval(activityAutoTimer); activityAutoTimer = null; }
+      }
+
+      if (prevBtn) {
+        // replaceWith clone to remove old listeners in case this is called multiple times
+        const newPrev = prevBtn.cloneNode(true);
+        prevBtn.replaceWith(newPrev);
+        newPrev.addEventListener('click', () => {
+          stopAuto();
+          goTo(currentIndex - 1);
+          startAuto();
+        });
+      }
+
+      if (nextBtn) {
+        const newNext = nextBtn.cloneNode(true);
+        nextBtn.replaceWith(newNext);
+        newNext.addEventListener('click', () => {
+          stopAuto();
+          goTo(currentIndex + 1);
+          startAuto();
+        });
+      }
+
+      const freshDots = document.querySelectorAll('#activityCarouselDots .dot');
+      freshDots.forEach((dot, i) => {
+        dot.addEventListener('click', () => {
+          stopAuto();
+          goTo(i);
+          startAuto();
+        });
+      });
+
+      track.addEventListener('mouseenter', () => { stopAuto(); });
+      track.addEventListener('mouseleave', () => { startAuto(); });
+
+      if (!track.dataset.activityResizeReady) {
+        track.dataset.activityResizeReady = 'true';
+        window.addEventListener('resize', () => {
+          goTo(currentIndex, false);
+        });
+      }
+
+      // Drag / Swipe
+      let dragStartX = 0;
+      let isDragging = false;
+      track.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragStartX = e.clientX;
+        stopAuto();
+      });
+
+      document.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        const diff = dragStartX - e.clientX;
+        if (Math.abs(diff) > 50) {
+          goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
+        }
+        startAuto();
+      });
+
+      track.addEventListener('touchstart', (e) => {
+        dragStartX = e.touches[0].clientX;
+        stopAuto();
+      }, { passive: true });
+
+      track.addEventListener('touchend', (e) => {
+        const diff = dragStartX - e.changedTouches[0].clientX;
+        if (Math.abs(diff) > 50) {
+          goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
+        }
+        startAuto();
+      });
+
+      // Start auto-play
+      goTo(0, false);
+      startAuto();
     }
+
+    // ============================================================
+    // CAROUSEL – Auto-scroll with pause on hover, nav & dots
+    // ============================================================
+    (function initCarousel() {
+      const track = document.getElementById('carouselTrack');
+      const prevBtn = document.getElementById('carouselPrev');
+      const nextBtn = document.getElementById('carouselNext');
+      const dots = document.querySelectorAll('#carouselDots .dot');
+      const TOTAL = 6; // real slides (the track has 2 identical sets)
+
+      if (!track) return;
+
+      let currentIndex = 0;
+      let autoTimer = null;
+      const INTERVAL = 3000; // ms between auto-advances
+
+      // --- helpers ---
+      function getSlideWidth() {
+        const slide = track.querySelector('.carousel-slide');
+        if (!slide) return 360;
+        const gap = 20;
+        return slide.offsetWidth + gap;
+      }
+
+      function goTo(index, animate = true) {
+        currentIndex = ((index % TOTAL) + TOTAL) % TOTAL;
+        const offset = -(currentIndex * getSlideWidth());
+        track.style.animation = 'none'; // stop CSS animation temporarily
+        track.style.transition = animate ? 'transform 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
+        track.style.transform = `translateX(${offset}px)`;
+        updateDots();
+      }
+
+      function updateDots() {
+        dots.forEach((d, i) => {
+          d.classList.toggle('active', i === currentIndex);
+        });
+      }
+
+      function startAuto() {
+        stopAuto();
+        autoTimer = setInterval(() => {
+          goTo(currentIndex + 1);
+        }, INTERVAL);
+      }
+
+      function stopAuto() {
+        if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+      }
+
+      // After the JS-driven slide settles, re-enable the seamless CSS scroll
+      function resumeCSSScroll() {
+        track.style.transition = 'none';
+        track.style.transform = '';
+        track.style.animation = 'carouselScroll 28s linear infinite';
+      }
+
+      // --- Navigation buttons ---
+      if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+          stopAuto();
+          goTo(currentIndex - 1);
+          startAuto();
+        });
+      }
+
+      if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+          stopAuto();
+          goTo(currentIndex + 1);
+          startAuto();
+        });
+      }
+
+      // --- Dot clicks ---
+      dots.forEach((dot, i) => {
+        dot.addEventListener('click', () => {
+          stopAuto();
+          goTo(i);
+          startAuto();
+        });
+      });
+
+      // --- Pause on hover ---
+      track.addEventListener('mouseenter', () => {
+        track.classList.add('paused');
+        stopAuto();
+      });
+      track.addEventListener('mouseleave', () => {
+        track.classList.remove('paused');
+        startAuto();
+      });
+
+      // --- Drag / swipe support ---
+      let dragStartX = 0;
+      let isDragging = false;
+
+      track.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragStartX = e.clientX;
+        stopAuto();
+      });
+
+      document.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        const diff = dragStartX - e.clientX;
+        if (Math.abs(diff) > 50) {
+          goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
+        }
+        startAuto();
+      });
+
+      // Touch swipe
+      track.addEventListener('touchstart', (e) => {
+        dragStartX = e.touches[0].clientX;
+        stopAuto();
+      }, { passive: true });
+
+      track.addEventListener('touchend', (e) => {
+        const diff = dragStartX - e.changedTouches[0].clientX;
+        if (Math.abs(diff) > 50) {
+          goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
+        }
+        startAuto();
+      });
+
+      // Start auto-play
+      startAuto();
+    })();
+
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startApp);
+  } else {
+    startApp();
   }
-
-  function showEmailToast(message) {
-    document.querySelectorAll('.email-toast').forEach(el => el.remove());
-
-    const toast = document.createElement('div');
-    toast.className = 'email-toast';
-    toast.innerHTML = `
-      <span style="font-size: 1.5rem;">📧</span>
-      <div style="display: flex; flex-direction: column;">
-        <strong style="color: #fff; margin-bottom: 2px;">Email Dispatch Center</strong>
-        <span style="color: rgba(255,255,255,0.85); line-height: 1.3;">${message}</span>
+}).catch(error => {
+  window.firebaseStartupFailed = true;
+  console.error('Firebase startup failed:', error);
+  const activityCarouselTrack = document.getElementById('activityCarouselTrack');
+  if (activityCarouselTrack) {
+    activityCarouselTrack.innerHTML = `
+      <div class="activity-status-message">
+        Activities are temporarily unavailable. Please check back soon.
       </div>
     `;
-    document.body.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('fade-out');
-      setTimeout(() => toast.remove(), 300);
-    }, 5500);
   }
-
-  // ============================================================
-  // CAROUSEL – Auto-scroll with pause on hover, nav & dots
-  // ============================================================
-  (function initCarousel() {
-    const track      = document.getElementById('carouselTrack');
-    const prevBtn    = document.getElementById('carouselPrev');
-    const nextBtn    = document.getElementById('carouselNext');
-    const dots       = document.querySelectorAll('#carouselDots .dot');
-    const TOTAL      = 6; // real slides (the track has 2 identical sets)
-
-    if (!track) return;
-
-    let currentIndex = 0;
-    let autoTimer    = null;
-    const INTERVAL   = 3000; // ms between auto-advances
-
-    // --- helpers ---
-    function getSlideWidth() {
-      const slide = track.querySelector('.carousel-slide');
-      if (!slide) return 360;
-      const gap = 20;
-      return slide.offsetWidth + gap;
-    }
-
-    function goTo(index, animate = true) {
-      currentIndex = ((index % TOTAL) + TOTAL) % TOTAL;
-      const offset = -(currentIndex * getSlideWidth());
-      track.style.animation = 'none'; // stop CSS animation temporarily
-      track.style.transition = animate ? 'transform 0.55s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none';
-      track.style.transform  = `translateX(${offset}px)`;
-      updateDots();
-    }
-
-    function updateDots() {
-      dots.forEach((d, i) => {
-        d.classList.toggle('active', i === currentIndex);
-      });
-    }
-
-    function startAuto() {
-      stopAuto();
-      autoTimer = setInterval(() => {
-        goTo(currentIndex + 1);
-      }, INTERVAL);
-    }
-
-    function stopAuto() {
-      if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-    }
-
-    // After the JS-driven slide settles, re-enable the seamless CSS scroll
-    function resumeCSSScroll() {
-      track.style.transition = 'none';
-      track.style.transform  = '';
-      track.style.animation  = 'carouselScroll 28s linear infinite';
-    }
-
-    // --- Navigation buttons ---
-    if (prevBtn) {
-      prevBtn.addEventListener('click', () => {
-        stopAuto();
-        goTo(currentIndex - 1);
-        startAuto();
-      });
-    }
-
-    if (nextBtn) {
-      nextBtn.addEventListener('click', () => {
-        stopAuto();
-        goTo(currentIndex + 1);
-        startAuto();
-      });
-    }
-
-    // --- Dot clicks ---
-    dots.forEach((dot, i) => {
-      dot.addEventListener('click', () => {
-        stopAuto();
-        goTo(i);
-        startAuto();
-      });
-    });
-
-    // --- Pause on hover ---
-    track.addEventListener('mouseenter', () => {
-      track.classList.add('paused');
-      stopAuto();
-    });
-    track.addEventListener('mouseleave', () => {
-      track.classList.remove('paused');
-      startAuto();
-    });
-
-    // --- Drag / swipe support ---
-    let dragStartX = 0;
-    let isDragging = false;
-
-    track.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      dragStartX = e.clientX;
-      stopAuto();
-    });
-
-    document.addEventListener('mouseup', (e) => {
-      if (!isDragging) return;
-      isDragging = false;
-      const diff = dragStartX - e.clientX;
-      if (Math.abs(diff) > 50) {
-        goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
-      }
-      startAuto();
-    });
-
-    // Touch swipe
-    track.addEventListener('touchstart', (e) => {
-      dragStartX = e.touches[0].clientX;
-      stopAuto();
-    }, { passive: true });
-
-    track.addEventListener('touchend', (e) => {
-      const diff = dragStartX - e.changedTouches[0].clientX;
-      if (Math.abs(diff) > 50) {
-        goTo(diff > 0 ? currentIndex + 1 : currentIndex - 1);
-      }
-      startAuto();
-    });
-
-    // Start auto-play
-    startAuto();
-  })();
-
 });
 
